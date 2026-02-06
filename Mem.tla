@@ -1,13 +1,20 @@
---------------------------------- MODULE Mem ---------------------------------
-EXTENDS Integers
+---------------------------------- MODULE Mem ----------------------------------
+EXTENDS Sequences, Integers
+
+CONSTANTS Key, Val, NoVal
+
+INSTANCE PartialFunction
 
 (*
  * Mem is sequence of changesets written by transactions in a block.
  *)
 
-TypeOKMem(mem, blockSize, Key, Val) ==
+InitMem(blockSize) ==
+    [i \in 1..blockSize |-> [k \in Key |-> NoVal]]
+
+TypeOKMem(mem, blockSize) ==
     /\ Len(mem) = blockSize
-    /\ \A i \in 1..blockSize: mem[i] \in [Key -> Val]
+    /\ \A i \in 1..blockSize: IsPartialFunction(mem[i])
 
 Max(s) == CHOOSE i \in s: \A j \in s: j <= i
 
@@ -28,6 +35,8 @@ Read(mem, storage, key, txn) ==
     LET idx == Find(mem, key, txn) IN
         IF idx = 0 THEN storage[key] ELSE mem[idx][key]
 
-Write(mem, txn, changeset) == [mem EXCEPT ![txn] = changeset]
+Write(mem, txn, writes) ==
+    LET cs == [k \in Key |-> IF k \in DOMAIN writes THEN writes[k] ELSE NoVal]
+    IN [mem EXCEPT ![txn] = cs]
 
 ================================================================================
