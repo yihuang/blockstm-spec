@@ -3,20 +3,20 @@ EXTENDS Sequences, Integers
 
 CONSTANTS Key, Val, NoVal
 
-INSTANCE PartialFunction
+INSTANCE PartialFn
 
 (*
  * Mem is sequence of changesets written by transactions in a block.
  *)
 
-InitMem(blockSize) ==
-    [i \in 1..blockSize |-> [k \in Key |-> NoVal]]
+Max(s) == CHOOSE i \in s: \A j \in s: j <= i
+
+EmptyMem(blockSize) ==
+    [i \in 1..blockSize |-> <<>>]
 
 TypeOKMem(mem, blockSize) ==
-    /\ Len(mem) = blockSize
-    /\ \A i \in 1..blockSize: IsPartialFunction(mem[i])
-
-Max(s) == CHOOSE i \in s: \A j \in s: j <= i
+    /\ DOMAIN mem = 1..blockSize
+    /\ \A i \in DOMAIN mem: mem[i] \in Overlay
 
 (*
  * Find the version of key as seen by transaction txn,
@@ -30,13 +30,16 @@ Find(mem, key, txn) ==
 (*
  * Read the value for key as seen by transaction txn.
  * read from storage if not found in mem.
+ *
+ * Storage is assumed to be defined on all keys, non-existence can be
+ * represented by NoVal.
  *)
 Read(mem, storage, key, txn) ==
-    LET idx == Find(mem, key, txn) IN
-        IF idx = 0 THEN storage[key] ELSE mem[idx][key]
+    LET idx == Find(mem, key, txn)
+    IN IF idx = 0
+        THEN GetOrNoVal(storage, key)
+        ELSE mem[idx][key]
 
-Write(mem, txn, writes) ==
-    LET cs == [k \in Key |-> IF k \in DOMAIN writes THEN writes[k] ELSE NoVal]
-    IN [mem EXCEPT ![txn] = cs]
+Write(mem, txn, cs) == [mem EXCEPT ![txn] = cs]
 
 ================================================================================
