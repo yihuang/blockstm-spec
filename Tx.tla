@@ -13,16 +13,14 @@ VARIABLES mem, txKey, txStatus, txObserved
 
 vars == <<mem, txKey, txStatus, txObserved>>
 
-TxIndex == 1..BlockSize
-
 TypeOK ==
-    /\ TypeOKMem(mem, BlockSize)
+    /\ TypeOKMem(mem)
     /\ txStatus \in [TxIndex -> {"read", "write", "done"}]
     /\ txKey \in [TxIndex -> Key]
     /\ txObserved \in [TxIndex -> Nat]
 
 Init ==
-    /\ mem = EmptyMem(BlockSize)
+    /\ mem = EmptyMem
     /\ txStatus = [i \in TxIndex |-> "read"]
     /\ txObserved = [i \in TxIndex |-> 0]
     /\ txKey \in [TxIndex -> Key]

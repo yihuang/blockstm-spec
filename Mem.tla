@@ -1,7 +1,7 @@
 ---------------------------------- MODULE Mem ----------------------------------
 EXTENDS Sequences, Integers
 
-CONSTANTS Key, Val, NoVal
+CONSTANTS Key, Val, NoVal, BlockSize
 
 INSTANCE PartialFn
 
@@ -11,12 +11,13 @@ INSTANCE PartialFn
 
 Max(s) == CHOOSE i \in s: \A j \in s: j <= i
 
-EmptyMem(blockSize) ==
-    [i \in 1..blockSize |-> <<>>]
+TxIndex == 1..BlockSize
 
-TypeOKMem(mem, blockSize) ==
-    /\ DOMAIN mem = 1..blockSize
-    /\ \A i \in DOMAIN mem: mem[i] \in Overlay
+EmptyMem ==
+    [i \in TxIndex |-> <<>>]
+
+TypeOKMem(mem) ==
+    mem \in [TxIndex -> Overlay]
 
 (*
  * Find the version of key as seen by transaction txn,
