@@ -71,10 +71,14 @@ Init ==
     /\ incarnation = [i \in TxIndex |-> 0]
     /\ readSet = [i \in TxIndex |-> <<>>]
 
+AllDone == \A txn \in TxIndex: execStatus[txn] = "Executed"
+
+Liveness == <>[]AllDone
+
 Next ==
     \E txn \in TxIndex:
         TxExecute(txn) \/ TxValidateOK(txn) \/ TxValidateAbort(txn) \/ TxReexecute(txn)
 
-Spec == Init /\ [][Next]_vars
+Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
 ================================================================================
