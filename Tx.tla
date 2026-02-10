@@ -9,48 +9,71 @@ ASSUME BlockSize > 0
 ASSUME Storage \in Dict
 ASSUME Val \subseteq Nat
 
-VARIABLES mem, txKey, txStatus, txObserved
+(* Tx is modeled as a function from read set to write set,
+ * and assume all the txs in the block follow the same logic.
+ *)
+Tx(reads) == [k \in DOMAIN reads |-> reads[k] + 1]
 
-vars == <<mem, txKey, txStatus, txObserved>>
+VARIABLES
+    mem, \* multi-version memory
+    execStatus, \* execution status of transactions
+    incarnation, \* incarnation numbers of transactions
+    readSet \* the read set of transactions, used for validation
+
+vars == << mem, execStatus, incarnation, readSet >>
+
+ExecStatus == {
+    "ReadyToExecute", \* ok to execute
+    "Executed", \* ok to validate
+    "Aborting" \* failed validation, ok to re-execute
+}
 
 TypeOK ==
     /\ TypeOKMem(mem)
-    /\ txStatus \in [TxIndex -> {"read", "write", "done"}]
-    /\ txKey \in [TxIndex -> Key]
-    /\ txObserved \in [TxIndex -> Nat]
+    /\ execStatus \in [TxIndex -> ExecStatus]
+    /\ incarnation \in [TxIndex -> Nat]
+    /\ readSet \in [TxIndex -> Dict]
+
+\* execute tx logic
+ExecuteTx(txn) ==
+    LET reads == ViewMem(mem, Storage, txn)
+        writes == Tx(reads)
+    IN
+        /\ mem' = WriteMem(mem, txn, writes)
+        /\ readSet' = [readSet EXCEPT ![txn] = reads]
+
+TxExecute(txn) ==
+    /\ execStatus[txn] = "ReadyToExecute"
+    /\ execStatus' = [execStatus EXCEPT ![txn] = "Executed"]
+    /\ ExecuteTx(txn)
+    /\ UNCHANGED incarnation
+
+TxValidateOK(txn) ==
+    /\ execStatus[txn] = "Executed"
+    /\ ViewMem(mem, Storage, txn) = readSet[txn]
+    /\ UNCHANGED << mem, execStatus, incarnation, readSet >>
+
+TxValidateAbort(txn) ==
+    /\ execStatus[txn] = "Executed"
+    /\ execStatus' = [execStatus EXCEPT ![txn] = "Aborting"]
+    /\ ViewMem(mem, Storage, txn) /= readSet[txn]
+    /\ UNCHANGED << mem, incarnation, readSet >>
+
+TxReexecute(txn) ==
+    /\ execStatus[txn] = "Aborting"
+    /\ execStatus' = [execStatus EXCEPT ![txn] = "Executed"]
+    /\ ExecuteTx(txn)
+    /\ incarnation' = [incarnation EXCEPT ![txn] = @ + 1]
 
 Init ==
     /\ mem = EmptyMem
-    /\ txStatus = [i \in TxIndex |-> "read"]
-    /\ txObserved = [i \in TxIndex |-> 0]
-    /\ txKey \in [TxIndex -> Key]
-
-ReadOrZero(txn) ==
-    LET val == Read(mem, Storage, txKey[txn], txn)
-    IN IF val = NoVal
-        THEN 0
-        ELSE val
-
-TxRead(txn) ==
-    /\ txStatus[txn] = "read"
-    /\ txStatus' = [txStatus EXCEPT ![txn] = "write"]
-    /\ txObserved' = [txObserved EXCEPT ![txn] = ReadOrZero(txn)]
-    /\ UNCHANGED <<mem, txKey>>
-
-TxWrite(txn) ==
-    /\ txStatus[txn] = "write"
-    /\ txStatus' = [txStatus EXCEPT ![txn] = "done"]
-    /\ LET cs == txKey[txn] :> txObserved[txn] + 1 IN 
-        mem' = Write(mem, txn, cs)
-    /\ UNCHANGED <<txKey, txObserved>>
-
-TxDone(txn) ==
-    /\ txStatus[txn] = "done"
-    /\ UNCHANGED vars
+    /\ execStatus = [i \in TxIndex |-> "ReadyToExecute"]
+    /\ incarnation = [i \in TxIndex |-> 0]
+    /\ readSet = [i \in TxIndex |-> <<>>]
 
 Next ==
     \E txn \in TxIndex:
-        TxRead(txn) \/ TxWrite(txn) \/ TxDone(txn)
+        TxExecute(txn) \/ TxValidateOK(txn) \/ TxValidateAbort(txn) \/ TxReexecute(txn)
 
 Spec == Init /\ [][Next]_vars
 

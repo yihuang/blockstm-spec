@@ -14,8 +14,23 @@ Dict == PFun(Key, Val)
  *)
 Overlay == PFun(Key, Val \union {NoVal})
 
+(* ToDict convert an Overlay to a Dict by removing all keys that are mapped to NoVal. *)
+ToDict(o) ==
+    LET keys == {k \in DOMAIN o: o[k] /= NoVal}
+    IN [k \in keys |-> o[k]]
+
 (* GetOrNoVal returns the value for key k in dict d, or NoVal if k is not in the domain of d. *)
 GetOrNoVal(d, k) ==
     IF k \in DOMAIN d THEN d[k] ELSE NoVal
+
+(* ApplyOverlay writes the overlay o into dict d, returning a new dict (without NoVal).
+ *)
+ApplyOverlay(d, o) ==
+    \* the domain of result is domain d substract the keys in o that are mapped to NoVal,
+    \* union the keys in o that are mapped to values.
+    LET delKeys == {k \in DOMAIN o: o[k] = NoVal}
+        addKeys == {k \in DOMAIN o: o[k] /= NoVal}
+        keys == ((DOMAIN d) \ delKeys) \union addKeys
+    IN [k \in keys |-> IF k \in addKeys THEN o[k] ELSE d[k]]
 
 ================================================================================
