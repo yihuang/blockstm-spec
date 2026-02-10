@@ -71,7 +71,18 @@ Init ==
     /\ incarnation = [i \in TxIndex |-> 0]
     /\ readSet = [i \in TxIndex |-> <<>>]
 
-AllDone == \A txn \in TxIndex: execStatus[txn] = "Executed"
+ApplyTx(st) == ApplyOverlay(st, Tx(st))
+
+(* the final state when transactions are executed sequentially *)
+SeqState ==
+    LET iter[i \in 0..BlockSize] ==
+        IF i = 0 THEN Storage
+        ELSE ApplyTx(iter[i - 1])
+    IN iter[BlockSize]
+
+AllDone ==
+    /\ \A txn \in TxIndex: execStatus[txn] = "Executed"
+    /\ ViewMem(mem, Storage, (BlockSize+1)) = SeqState
 
 Liveness == <>[]AllDone
 
