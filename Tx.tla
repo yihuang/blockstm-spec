@@ -1,13 +1,14 @@
 ---------------------------------- MODULE Tx -----------------------------------
-EXTENDS Sequences, TLC
+EXTENDS Sequences, Integers, TLC
 
-CONSTANTS Key, Val, NoVal, BlockSize, Storage
+CONSTANTS Key, Val, NoVal, BlockSize
 
 INSTANCE Mem
 
-ASSUME BlockSize > 0
-ASSUME Storage \in Dict
 ASSUME Val \subseteq Nat
+ASSUME BlockSize > 0
+
+Storage == [k \in Key |-> 0]
 
 (* Tx is modeled as a function from read set to write set,
  * and assume all the txs in the block follow the same logic.
