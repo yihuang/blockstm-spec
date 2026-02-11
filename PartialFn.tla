@@ -1,6 +1,8 @@
 ------------------------------- MODULE PartialFn -------------------------------
 CONSTANTS Key, Val, NoVal
 
+\* NoVal == CHOOSE v: v \notin Val
+
 \* https://discuss.tlapl.us/msg01723.html
 PFun(S, T) == UNION {[AS -> T]: AS \in SUBSET S}
 

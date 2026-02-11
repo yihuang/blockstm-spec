@@ -43,22 +43,13 @@ ExecuteTx(txn) ==
         /\ mem' = WriteMem(mem, txn, writes)
         /\ readSet' = [readSet EXCEPT ![txn] = reads]
 
-TxExecute(txn) ==
+ValidateTx(txn) == ViewMem(mem, Storage, txn) = readSet[txn]
+
+TxFirstExecute(txn) ==
     /\ execStatus[txn] = "ReadyToExecute"
     /\ execStatus' = [execStatus EXCEPT ![txn] = "Executed"]
     /\ ExecuteTx(txn)
     /\ UNCHANGED incarnation
-
-TxValidateOK(txn) ==
-    /\ execStatus[txn] = "Executed"
-    /\ ViewMem(mem, Storage, txn) = readSet[txn]
-    /\ UNCHANGED << mem, execStatus, incarnation, readSet >>
-
-TxValidateAbort(txn) ==
-    /\ execStatus[txn] = "Executed"
-    /\ execStatus' = [execStatus EXCEPT ![txn] = "Aborting"]
-    /\ ViewMem(mem, Storage, txn) /= readSet[txn]
-    /\ UNCHANGED << mem, incarnation, readSet >>
 
 TxReexecute(txn) ==
     /\ execStatus[txn] = "Aborting"
@@ -66,11 +57,20 @@ TxReexecute(txn) ==
     /\ ExecuteTx(txn)
     /\ incarnation' = [incarnation EXCEPT ![txn] = @ + 1]
 
-Init ==
-    /\ mem = EmptyMem
-    /\ execStatus = [i \in TxIndex |-> "ReadyToExecute"]
-    /\ incarnation = [i \in TxIndex |-> 0]
-    /\ readSet = [i \in TxIndex |-> <<>>]
+TxExecute(txn) == TxFirstExecute(txn) \/ TxReexecute(txn)
+
+TxValidateOK(txn) ==
+    /\ execStatus[txn] = "Executed"
+    /\ ValidateTx(txn)
+    /\ UNCHANGED << mem, execStatus, incarnation, readSet >>
+
+TxValidateAbort(txn) ==
+    /\ execStatus[txn] = "Executed"
+    /\ ~ValidateTx(txn)
+    /\ execStatus' = [execStatus EXCEPT ![txn] = "Aborting"]
+    /\ UNCHANGED << mem, incarnation, readSet >>
+
+TxValidate(txn) == TxValidateOK(txn) \/ TxValidateAbort(txn)
 
 ApplyTx(st) == ApplyOverlay(st, Tx(st))
 
@@ -87,9 +87,15 @@ AllDone ==
 
 Liveness == <>[]AllDone
 
+Init ==
+    /\ mem = EmptyMem
+    /\ execStatus = [i \in TxIndex |-> "ReadyToExecute"]
+    /\ incarnation = [i \in TxIndex |-> 0]
+    /\ readSet = [i \in TxIndex |-> <<>>]
+
 Next ==
     \E txn \in TxIndex:
-        TxExecute(txn) \/ TxValidateOK(txn) \/ TxValidateAbort(txn) \/ TxReexecute(txn)
+        TxExecute(txn) \/ TxValidate(txn)
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
