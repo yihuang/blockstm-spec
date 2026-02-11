@@ -16,10 +16,12 @@ Tx == INSTANCE Tx
 VARIABLES
     execution_idx, \* the next transaction to execute
     validation_idx, \* the next transaction to validate
-    tasks \* the current task of each executor
+    tasks, \* the current task of each executor
+    terminated, \* whether the executor is terminated
+    active_tasks \* the number of currently active tasks
 
 txVars == << mem, execStatus, incarnation, readSet >>
-vars == << txVars, execution_idx, validation_idx, tasks >>
+vars == << txVars, execution_idx, validation_idx, tasks, terminated, active_tasks >>
 
 Task == [
     txn: Tx!TxIndex ,
@@ -32,12 +34,15 @@ TypeOK ==
     /\ execution_idx \in 1..(BlockSize + 1)
     /\ validation_idx \in 1..(BlockSize + 1)
     /\ tasks \in [1..Executors -> Task \union {NoTask}]
+    /\ terminated \in [1..Executors -> BOOLEAN]
 
 Init ==
     /\ Tx!Init
     /\ execution_idx = 1
     /\ validation_idx = 1
     /\ tasks = [e \in 1..Executors |-> NoTask]
+    /\ terminated = [e \in 1..Executors |-> FALSE]
+    /\ active_tasks = 0
 
 PreferValidation == validation_idx < execution_idx
 
@@ -58,6 +63,8 @@ NextTaskValidation(e) ==
 FetchTask(e) ==
     /\ tasks[e] = NoTask
     /\ NextTaskExecution(e) \/ NextTaskValidation(e)
+    /\ active_tasks' = active_tasks + 1
+    /\ UNCHANGED terminated
 
 ResetValidationIdx(txn) ==
     IF txn < validation_idx THEN
@@ -69,31 +76,49 @@ ExecuteTx(e) ==
     /\ Tx!TxExecute(tasks[e].txn)
     /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Validation"]]
     /\ ResetValidationIdx(tasks[e].txn + 1)
-    /\ UNCHANGED << execution_idx >>
+    /\ UNCHANGED << execution_idx, active_tasks >>
 
 ValidateTx(e) ==
     /\ tasks[e].kind = "Validation"
     /\ LET txn == tasks[e].txn IN
         \/ /\ Tx!TxValidateAbort(txn)
           /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Execution"]]
+          /\ UNCHANGED active_tasks
         \/ /\ Tx!TxValidateOK(txn)
           /\ tasks' = [tasks EXCEPT ![e] = NoTask]
+          /\ active_tasks' = active_tasks - 1
         \/ /\ UNCHANGED << txVars, tasks >> \* skip if tx is not ready to validate
           /\ tasks' = [tasks EXCEPT ![e] = NoTask]
+          /\ active_tasks' = active_tasks - 1
     /\ UNCHANGED << execution_idx, validation_idx >>
 
 ExecTask(e) ==
     /\ tasks[e] /= NoTask
     /\ ExecuteTx(e) \/ ValidateTx(e)
+    /\ UNCHANGED << terminated >>
+
+CheckDone(e) ==
+    /\ ~terminated[e]
+    /\ validation_idx = BlockSize + 1
+    /\ execution_idx = BlockSize + 1
+    /\ active_tasks = 0
+    /\ terminated' = [terminated EXCEPT ![e] = TRUE]
+    /\ UNCHANGED << execution_idx, validation_idx, tasks, active_tasks, txVars >>
+
+Done(e) ==
+    /\ terminated[e]
+    /\ UNCHANGED vars
 
 Executor(e) ==
-    FetchTask(e) \/ ExecTask(e) \/ UNCHANGED vars
+    CheckDone(e) \/ FetchTask(e) \/ ExecTask(e) \/ Done(e)
 
 Next ==
     \E e \in 1..Executors:
         Executor(e)
 
-Liveness == Tx!Liveness
+AllDone == \A e \in 1..Executors: terminated[e]
+
+Liveness == <>AllDone /\ (AllDone ~> Tx!AllDone)
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
