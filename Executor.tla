@@ -118,7 +118,9 @@ Next ==
 
 AllDone == \A e \in 1..Executors: terminated[e]
 
-Liveness == <>AllDone /\ (AllDone ~> Tx!AllDone)
+Consistency == [](AllDone => Tx!AllDone)
+
+Liveness == <>[]AllDone
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
