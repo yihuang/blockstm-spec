@@ -74,11 +74,12 @@ ExecuteTx(e) ==
 ValidateTx(e) ==
     /\ tasks[e].kind = "Validation"
     /\ LET txn == tasks[e].txn IN
-        \/ /\ Tx!TxValidateOK(txn)
-          /\ tasks' = [tasks EXCEPT ![e] = NoTask]
         \/ /\ Tx!TxValidateAbort(txn)
           /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Execution"]]
-        \/ UNCHANGED << txVars, tasks >> \* skip if tx is not ready to validate
+        \/ /\ Tx!TxValidateOK(txn)
+          /\ tasks' = [tasks EXCEPT ![e] = NoTask]
+        \/ /\ UNCHANGED << txVars, tasks >> \* skip if tx is not ready to validate
+          /\ tasks' = [tasks EXCEPT ![e] = NoTask]
     /\ UNCHANGED << execution_idx, validation_idx >>
 
 ExecTask(e) ==
