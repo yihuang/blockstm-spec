@@ -14,14 +14,22 @@ VARIABLES
 Tx == INSTANCE Tx
 
 VARIABLES
+    \* global shared counters
     execution_idx, \* the next transaction to execute
     validation_idx, \* the next transaction to validate
+    commit_idx, \* the next transaction to commit
+    active_tasks, \* the number of currently active tasks
+    validation_wave, \* validation wave counter, used to establish order of validation events
+
+    \* executor local states
     tasks, \* the current task of each executor
     terminated, \* whether the executor is terminated
-    active_tasks \* the number of currently active tasks
+
+    \* tx validation status
+    tx_validated_wave \* the biggest wave number when each transaction was validated succesfully
 
 txVars == << mem, execStatus, incarnation, readSet >>
-vars == << txVars, execution_idx, validation_idx, tasks, terminated, active_tasks >>
+vars == << txVars, execution_idx, validation_idx, commit_idx, active_tasks, validation_wave, tasks, terminated, tx_validated_wave >>
 
 Task == [
     txn: Tx!TxIndex ,
@@ -33,17 +41,23 @@ TypeOK ==
     /\ Tx!TypeOK
     /\ execution_idx \in 1..(BlockSize + 1)
     /\ validation_idx \in 1..(BlockSize + 1)
+    /\ commit_idx \in 1..(BlockSize + 1)
+    /\ active_tasks \in 0..Executors
+    /\ validation_wave \in Nat
     /\ tasks \in [1..Executors -> Task \union {NoTask}]
     /\ terminated \in [1..Executors -> BOOLEAN]
-    /\ active_tasks \in 0..Executors
+    /\ tx_validated_wave \in [1..BlockSize -> Nat]
 
 Init ==
     /\ Tx!Init
     /\ execution_idx = 1
     /\ validation_idx = 1
+    /\ commit_idx = 1
+    /\ active_tasks = 0
+    /\ validation_wave = 1  \* starts from 1, 0 is reserved for not validated status
     /\ tasks = [e \in 1..Executors |-> NoTask]
     /\ terminated = [e \in 1..Executors |-> FALSE]
-    /\ active_tasks = 0
+    /\ tx_validated_wave = [txn \in 1..BlockSize |-> 0]
 
 PreferValidation == validation_idx < execution_idx
 
@@ -65,12 +79,20 @@ FetchTask(e) ==
     /\ tasks[e] = NoTask
     /\ NextTaskExecution(e) \/ NextTaskValidation(e)
     /\ active_tasks' = active_tasks + 1
-    /\ UNCHANGED << terminated, txVars >>
+    /\ UNCHANGED << commit_idx, validation_wave, terminated, tx_validated_wave, txVars >>
 
 ResetValidationIdx(txn) ==
     IF txn < validation_idx THEN
-        validation_idx' = txn
-    ELSE UNCHANGED validation_idx
+        /\ validation_idx' = txn
+        /\ validation_wave' = validation_wave + 1
+    ELSE
+        UNCHANGED << validation_idx, validation_wave >>
+
+SetTxValidatedWave(txn, wave) ==
+    IF wave > tx_validated_wave[txn] THEN
+        tx_validated_wave' = [tx_validated_wave EXCEPT ![txn] = wave]
+    ELSE
+        UNCHANGED tx_validated_wave
 
 ExecuteTx(e) ==
     /\ tasks[e].kind = "Execution"
@@ -81,26 +103,30 @@ ExecuteTx(e) ==
        ELSE
          /\ tasks' = [tasks EXCEPT ![e] = NoTask]
          /\ active_tasks' = active_tasks - 1
-    /\ UNCHANGED << execution_idx, active_tasks >>
+         /\ UNCHANGED << validation_wave >>
+    /\ UNCHANGED << execution_idx, active_tasks, tx_validated_wave >>
 
 ValidateTx(e) ==
     /\ tasks[e].kind = "Validation"
     /\ LET txn == tasks[e].txn IN
         \/ /\ Tx!TxValidateAbort(txn)
           /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Execution"]]
-          /\ UNCHANGED active_tasks
+          /\ UNCHANGED << active_tasks, tx_validated_wave >>
+
         \/ /\ Tx!TxValidateOK(txn)
           /\ tasks' = [tasks EXCEPT ![e] = NoTask]
           /\ active_tasks' = active_tasks - 1
-        \/ /\ UNCHANGED << txVars, tasks >> \* skip if tx is not ready to validate
-          /\ tasks' = [tasks EXCEPT ![e] = NoTask]
+          /\ SetTxValidatedWave(txn, validation_wave)
+
+        \/ /\ tasks' = [tasks EXCEPT ![e] = NoTask] \* skip if tx is not ready to validate
           /\ active_tasks' = active_tasks - 1
-    /\ UNCHANGED << execution_idx, validation_idx >>
+          /\ UNCHANGED << txVars, tasks, tx_validated_wave >>
+    /\ UNCHANGED << execution_idx, validation_idx, validation_wave >>
 
 ExecTask(e) ==
     /\ tasks[e] /= NoTask
     /\ ExecuteTx(e) \/ ValidateTx(e)
-    /\ UNCHANGED << terminated >>
+    /\ UNCHANGED << commit_idx, terminated >>
 
 CheckDone(e) ==
     /\ ~terminated[e]
@@ -108,7 +134,7 @@ CheckDone(e) ==
     /\ execution_idx = BlockSize + 1
     /\ active_tasks = 0
     /\ terminated' = [terminated EXCEPT ![e] = TRUE]
-    /\ UNCHANGED << execution_idx, validation_idx, tasks, active_tasks, txVars >>
+    /\ UNCHANGED << execution_idx, validation_idx, commit_idx, validation_wave, tasks, active_tasks, tx_validated_wave, txVars >>
 
 Done(e) ==
     /\ terminated[e]
