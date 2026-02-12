@@ -51,20 +51,20 @@ NextTaskExecution(e) ==
     /\ execution_idx < BlockSize + 1
     /\ execution_idx' = execution_idx + 1
     /\ tasks' = [tasks EXCEPT ![e] = [txn |-> execution_idx, kind |-> "Execution"]]
-    /\ UNCHANGED << validation_idx, txVars >>
+    /\ UNCHANGED << validation_idx >>
 
 NextTaskValidation(e) ==
     /\ PreferValidation
     /\ validation_idx < BlockSize + 1
     /\ validation_idx' = validation_idx + 1
     /\ tasks' = [tasks EXCEPT ![e] = [txn |-> validation_idx, kind |-> "Validation"]]
-    /\ UNCHANGED << execution_idx, txVars >>
+    /\ UNCHANGED << execution_idx >>
 
 FetchTask(e) ==
     /\ tasks[e] = NoTask
     /\ NextTaskExecution(e) \/ NextTaskValidation(e)
     /\ active_tasks' = active_tasks + 1
-    /\ UNCHANGED terminated
+    /\ UNCHANGED << terminated, txVars >>
 
 ResetValidationIdx(txn) ==
     IF txn < validation_idx THEN
@@ -74,8 +74,12 @@ ResetValidationIdx(txn) ==
 ExecuteTx(e) ==
     /\ tasks[e].kind = "Execution"
     /\ Tx!TxExecute(tasks[e].txn)
-    /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Validation"]]
-    /\ ResetValidationIdx(tasks[e].txn + 1)
+    /\ IF tasks[e].txn < validation_idx THEN
+         /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Validation"]]
+         /\ ResetValidationIdx(tasks[e].txn + 1)
+       ELSE
+         /\ tasks' = [tasks EXCEPT ![e] = NoTask]
+         /\ active_tasks' = active_tasks - 1
     /\ UNCHANGED << execution_idx, active_tasks >>
 
 ValidateTx(e) ==
