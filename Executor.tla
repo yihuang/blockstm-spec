@@ -116,8 +116,20 @@ Next ==
     \E e \in 1..Executors:
         Executor(e)
 
+\* Properties
+
+\* Invariant: no two executors can execute the same transaction at the same time
+NoConcurrentExecution ==
+    \A e1, e2 \in 1..Executors:
+        (e1 /= e2) => ~(
+            /\ tasks[e1] /= NoTask
+            /\ tasks[e1].kind = "Execution"
+            /\ tasks[e2] = tasks[e1]
+        )
+
 AllDone == \A e \in 1..Executors: terminated[e]
 
+\* when executors are done, transactions must reach consistent final state
 Consistency == [](AllDone => Tx!AllDone)
 
 Liveness == <>[]AllDone
