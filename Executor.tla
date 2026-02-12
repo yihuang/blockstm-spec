@@ -35,6 +35,7 @@ TypeOK ==
     /\ validation_idx \in 1..(BlockSize + 1)
     /\ tasks \in [1..Executors -> Task \union {NoTask}]
     /\ terminated \in [1..Executors -> BOOLEAN]
+    /\ active_tasks \in 0..Executors
 
 Init ==
     /\ Tx!Init
