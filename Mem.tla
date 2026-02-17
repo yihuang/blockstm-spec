@@ -1,5 +1,5 @@
 ---------------------------------- MODULE Mem ----------------------------------
-EXTENDS Sequences, Integers
+EXTENDS Sequences, Integers, FiniteSetsExt
 
 CONSTANTS Key, Val, NoVal, BlockSize
 
@@ -8,8 +8,6 @@ INSTANCE PartialFn
 (*
  * Mem is sequence of changesets written by transactions in a block.
  *)
-
-Max(s) == CHOOSE i \in s: \A j \in s: j <= i
 
 TxIndex == 1..BlockSize
 
