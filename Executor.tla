@@ -112,8 +112,9 @@ ExecuteTx(e) ==
     /\ UNCHANGED << execution_idx, tx_validated_wave >>
 
 ValidateTx(e) ==
+    LET txn == tasks[e].txn IN
     /\ tasks[e].kind = "Validation"
-    /\ LET txn == tasks[e].txn IN
+    /\ IF ENABLED Tx!TxValidate(txn) THEN
         \/ /\ Tx!TxValidateAbort(txn)
           /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Execution"]]
           /\ UNCHANGED << active_tasks, tx_validated_wave >>
@@ -122,10 +123,10 @@ ValidateTx(e) ==
           /\ tasks' = [tasks EXCEPT ![e] = NoTask]
           /\ active_tasks' = active_tasks - 1
           /\ SetTxValidatedWave(txn, validation_wave)
-
-        \/ /\ tasks' = [tasks EXCEPT ![e] = NoTask] \* skip if tx is not ready to validate
-          /\ active_tasks' = active_tasks - 1
-          /\ UNCHANGED << txVars, tx_validated_wave >>
+      ELSE
+        /\ tasks' = [tasks EXCEPT ![e] = NoTask] \* skip if tx is not ready to validate
+        /\ active_tasks' = active_tasks - 1
+        /\ UNCHANGED << txVars, tx_validated_wave >>
     /\ UNCHANGED << execution_idx, validation_idx, validation_wave >>
 
 ExecTask(e) ==
