@@ -104,11 +104,12 @@ ExecuteTx(e) ==
              ResetValidationIdx(txn + 1)
            ELSE
              UNCHANGED << validation_idx, validation_wave >>
+         /\ UNCHANGED << active_tasks >>
        ELSE
          /\ tasks' = [tasks EXCEPT ![e] = NoTask]
          /\ active_tasks' = active_tasks - 1
-         /\ UNCHANGED << validation_wave >>
-    /\ UNCHANGED << execution_idx, active_tasks, tx_validated_wave >>
+         /\ UNCHANGED << validation_idx, validation_wave >>
+    /\ UNCHANGED << execution_idx, tx_validated_wave >>
 
 ValidateTx(e) ==
     /\ tasks[e].kind = "Validation"
@@ -124,7 +125,7 @@ ValidateTx(e) ==
 
         \/ /\ tasks' = [tasks EXCEPT ![e] = NoTask] \* skip if tx is not ready to validate
           /\ active_tasks' = active_tasks - 1
-          /\ UNCHANGED << txVars, tasks, tx_validated_wave >>
+          /\ UNCHANGED << txVars, tx_validated_wave >>
     /\ UNCHANGED << execution_idx, validation_idx, validation_wave >>
 
 ExecTask(e) ==
