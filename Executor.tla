@@ -95,11 +95,15 @@ SetTxValidatedWave(txn, wave) ==
         UNCHANGED tx_validated_wave
 
 ExecuteTx(e) ==
+    LET txn == tasks[e].txn IN
     /\ tasks[e].kind = "Execution"
-    /\ Tx!TxExecute(tasks[e].txn)
-    /\ IF tasks[e].txn < validation_idx THEN
+    /\ Tx!TxExecute(txn)
+    /\ IF txn < validation_idx THEN
          /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Validation"]]
-         /\ ResetValidationIdx(tasks[e].txn + 1)
+         /\ IF incarnation[txn] = 0 THEN \* only write new key in first incarnation
+             ResetValidationIdx(txn + 1)
+           ELSE
+             UNCHANGED << validation_idx, validation_wave >>
        ELSE
          /\ tasks' = [tasks EXCEPT ![e] = NoTask]
          /\ active_tasks' = active_tasks - 1
