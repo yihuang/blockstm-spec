@@ -12,6 +12,12 @@ Check model with tlc:
 $ tlc Tx.tla
 ```
 
+### CommunityModules
+
+We used [CommunityModules](https://github.com/tlaplus/CommunityModules), please install it before running the specs.
+
+nix users can install it with this branch: [nixpkgs#490970](https://github.com/NixOS/nixpkgs/pull/490970)
+
 ### Specs
 
 * `Tx.tla`
