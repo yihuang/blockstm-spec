@@ -51,5 +51,4 @@ WriteMem(mem, txn, cs) == [mem EXCEPT ![txn] = cs]
 ViewMem(mem, storage, txn) ==
     ToDict([k \in Key |-> ReadMem(mem, storage, k, txn)])
 
-
 ================================================================================

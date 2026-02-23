@@ -115,11 +115,11 @@ ValidateTx(e) ==
     LET txn == tasks[e].txn IN
     /\ tasks[e].kind = "Validation"
     /\ IF ENABLED Tx!TxValidate(txn) THEN
-        \/ /\ Tx!TxValidateAbort(txn)
+        \/ Tx!TxValidateAbort(txn)
           /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Execution"]]
           /\ UNCHANGED << active_tasks, tx_validated_wave >>
 
-        \/ /\ Tx!TxValidateOK(txn)
+        \/ Tx!TxValidateOK(txn)
           /\ tasks' = [tasks EXCEPT ![e] = NoTask]
           /\ active_tasks' = active_tasks - 1
           /\ SetTxValidatedWave(txn, validation_wave)
@@ -166,10 +166,10 @@ NoConcurrentExecution ==
 
 AllDone == \A e \in 1..Executors: terminated[e]
 
-\* when executors are done, transactions must reach consistent final state
-Consistency == [](AllDone => Tx!AllDone)
-
-Liveness == <>[]AllDone
+Properties ==
+    /\ Tx!Properties
+    /\ [](AllDone => []AllDone)
+    /\ [](AllDone => Tx!Committed(BlockSize))
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
