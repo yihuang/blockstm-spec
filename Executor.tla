@@ -114,7 +114,7 @@ ExecuteTx(e) ==
 ValidateTx(e) ==
     LET txn == tasks[e].txn IN
     /\ tasks[e].kind = "Validation"
-    /\ IF execStatus[txn] = "Executed" THEN
+    /\ IF ENABLED Tx!TxValidate(txn) THEN
         \/ /\ Tx!TxValidateAbort(txn)
           /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Execution"]]
           /\ UNCHANGED << active_tasks, tx_validated_wave >>
