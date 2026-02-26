@@ -153,6 +153,25 @@ Next ==
     \E e \in 1..Executors:
         Executor(e)
 
+FetchTask1 == Executors >= 1 /\ FetchTask(1)
+FetchTask2 == Executors >= 2 /\ FetchTask(2)
+ExecTask1 == Executors >= 1 /\ ExecTask(1)
+ExecTask2 == Executors >= 2 /\ ExecTask(2)
+CheckDone1 == Executors >= 1 /\ CheckDone(1)
+CheckDone2 == Executors >= 2 /\ CheckDone(2)
+Done1 == Executors >= 1 /\ Done(1)
+Done2 == Executors >= 2 /\ Done(2)
+
+NextUI ==
+    \/ FetchTask1
+    \/ FetchTask2
+    \/ ExecTask1
+    \/ ExecTask2
+    \/ CheckDone1
+    \/ CheckDone2
+    \/ Done1
+    \/ Done2
+
 \* Properties
 
 \* Invariant: no two executors can execute the same transaction at the same time
