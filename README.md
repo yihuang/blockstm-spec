@@ -12,6 +12,10 @@ Check model with tlc:
 $ tlc Tx.tla
 ```
 
+### Unicode
+
+* [tlauc](https://github.com/tlaplus-community/tlauc)
+
 ### Specs
 
 * `Tx.tla`

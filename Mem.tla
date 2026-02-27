@@ -9,23 +9,23 @@ INSTANCE PartialFn
  * Mem is sequence of changesets written by transactions in a block.
  *)
 
-Max(s) == CHOOSE i \in s: \A j \in s: j <= i
+Max(s) ≜ CHOOSE i ∈ s: ∀ j ∈ s: j ≤ i
 
-TxIndex == 1..BlockSize
+TxIndex ≜ 1‥BlockSize
 
-EmptyMem ==
-    [i \in TxIndex |-> <<>>]
+EmptyMem ≜
+    [i ∈ TxIndex ↦ ⟨⟩]
 
-TypeOKMem(mem) ==
-    mem \in [TxIndex -> Overlay]
+TypeOKMem(mem) ≜
+    mem ∈ [TxIndex → Overlay]
 
 (*
  * find the version of key as seen by transaction txn,
  * i.e. the largest index i < txn such that mem[i] contains key,
  * returns 0 if not found in mem.
  *)
-FindMem(mem, key, txn) ==
-    LET cs == {i \in 1..(txn - 1): key \in DOMAIN mem[i]} IN
+FindMem(mem, key, txn) ≜
+    LET cs ≜ {i ∈ 1‥(txn - 1): key ∈ DOMAIN mem[i]} IN
         IF cs = {} THEN 0 ELSE Max(cs)
 
 (*
@@ -35,20 +35,20 @@ FindMem(mem, key, txn) ==
  * Storage is assumed to be defined on all keys, non-existence can be
  * represented by NoVal.
  *)
-ReadMem(mem, storage, key, txn) ==
-    LET idx == FindMem(mem, key, txn)
+ReadMem(mem, storage, key, txn) ≜
+    LET idx ≜ FindMem(mem, key, txn)
     IN IF idx = 0
         THEN GetOrNoVal(storage, key)
         ELSE mem[idx][key]
 
-WriteMem(mem, txn, cs) == [mem EXCEPT ![txn] = cs]
+WriteMem(mem, txn, cs) ≜ [mem EXCEPT ![txn] = cs]
 
 (*
  * returns the visible key value pairs for transaction txn,
  * i.e. the union of all mem[i] for i < txn, with bigger i taking precedence
  * for the same key.
  *)
-ViewMem(mem, storage, txn) ==
-    ToDict([k \in Key |-> ReadMem(mem, storage, k, txn)])
+ViewMem(mem, storage, txn) ≜
+    ToDict([k ∈ Key ↦ ReadMem(mem, storage, k, txn)])
 
 ================================================================================
