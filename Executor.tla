@@ -9,7 +9,8 @@ VARIABLES
     mem, \* multi-version memory
     execStatus, \* execution status of transactions
     incarnation, \* incarnation numbers of transactions
-    readSet \* the read set of transactions, used for validation
+    readSet, \* the read set of transactions, used for validation
+    committed \* index of last committed transaction
 
 Tx == INSTANCE Tx
 
@@ -28,7 +29,7 @@ VARIABLES
     \* tx validation status
     tx_validated_wave \* the biggest wave number when each transaction was validated succesfully
 
-txVars == << mem, execStatus, incarnation, readSet >>
+txVars == << mem, execStatus, incarnation, readSet, committed >>
 vars == << txVars, execution_idx, validation_idx, commit_idx, active_tasks, validation_wave, tasks, terminated, tx_validated_wave >>
 
 Task == [
@@ -179,9 +180,10 @@ NoConcurrentExecution ==
 AllDone == \A e \in 1..Executors: terminated[e]
 
 Properties ==
-    /\ Tx!Properties
+    /\ Tx!CommittedState
+    /\ Tx!EventuallyCommitted
     /\ [](AllDone => []AllDone)
-    /\ [](AllDone => Tx!Committed(BlockSize))
+    /\ [](AllDone => committed = BlockSize)
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
