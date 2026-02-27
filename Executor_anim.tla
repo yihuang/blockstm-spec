@@ -66,6 +66,7 @@ HeaderElems ==
         Text(16, 40,
              "exec_idx=" \o ToString(execution_idx)
                 \o "  val_idx=" \o ToString(validation_idx)
+                \o "  commit_idx=" \o ToString(commit_idx)
                 \o "  active=" \o ToString(active_tasks)
                 \o "  wave=" \o ToString(validation_wave),
              ("fill" :> "black" @@ "font-size" :> "12" @@ "font-family" :> "monospace"))
