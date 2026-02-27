@@ -153,6 +153,18 @@ Next ==
     \E e \in 1..Executors:
         Executor(e)
 
+FetchTaskAny == \E e \in 1..Executors: FetchTask(e)
+ExecTaskAny == \E e \in 1..Executors: ExecTask(e)
+CheckDoneAny == \E e \in 1..Executors: CheckDone(e)
+DoneAny == \E e \in 1..Executors: Done(e)
+
+\* UI action groups that work based on Executors value
+NextUI ==
+    \/ FetchTaskAny
+    \/ ExecTaskAny
+    \/ CheckDoneAny
+    \/ DoneAny
+
 \* Properties
 
 \* Invariant: no two executors can execute the same transaction at the same time
