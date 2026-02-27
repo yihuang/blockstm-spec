@@ -140,6 +140,7 @@ CheckDone(e) ==
     /\ ~terminated[e]
     /\ validation_idx = BlockSize + 1
     /\ execution_idx = BlockSize + 1
+    /\ commit_idx = BlockSize + 1
     /\ active_tasks = 0
     /\ terminated' = [terminated EXCEPT ![e] = TRUE]
     /\ UNCHANGED << execution_idx, validation_idx, commit_idx, validation_wave, tasks, active_tasks, tx_validated_wave, txVars >>
@@ -185,6 +186,7 @@ NoConcurrentExecution ==
 
 Properties ==
     /\ Tx!Properties
+    /\ [](commit_idx <= Tx!CommittedTxn + 1)
     /\ [](AllDone => []AllDone)
     /\ [](AllDone => Tx!CommittedTxn = BlockSize)
 
