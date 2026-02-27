@@ -158,6 +158,7 @@ ExecTaskAny == \E e \in 1..Executors: ExecTask(e)
 CheckDoneAny == \E e \in 1..Executors: CheckDone(e)
 DoneAny == \E e \in 1..Executors: Done(e)
 
+\* UI action groups that work based on Executors value
 NextUI ==
     \/ FetchTaskAny
     \/ ExecTaskAny
