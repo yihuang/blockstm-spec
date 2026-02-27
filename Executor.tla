@@ -3,7 +3,7 @@ EXTENDS Integers, Sequences
 
 CONSTANTS Key, Val, NoVal, BlockSize, Executors, NoTask
 
-ASSUME Executors \in Nat
+ASSUME Executors ∈ ℕ
 
 VARIABLES
     mem, \* multi-version memory
@@ -11,7 +11,7 @@ VARIABLES
     incarnation, \* incarnation numbers of transactions
     readSet \* the read set of transactions, used for validation
 
-Tx == INSTANCE Tx
+Tx ≜ INSTANCE Tx
 
 VARIABLES
     \* global shared counters
@@ -28,149 +28,149 @@ VARIABLES
     \* tx validation status
     tx_validated_wave \* the biggest wave number when each transaction was validated succesfully
 
-txVars == << mem, execStatus, incarnation, readSet >>
-vars == << txVars, execution_idx, validation_idx, commit_idx, active_tasks, validation_wave, tasks, terminated, tx_validated_wave >>
+txVars ≜ ⟨ mem, execStatus, incarnation, readSet ⟩
+vars ≜ ⟨ txVars, execution_idx, validation_idx, commit_idx, active_tasks, validation_wave, tasks, terminated, tx_validated_wave ⟩
 
-Task == [
+Task ≜ [
     txn: Tx!TxIndex ,
     kind: {"Execution", "Validation"}
 ]
 \* NoTask == CHOOSE t: t \notin Task
 
-TypeOK ==
-    /\ Tx!TypeOK
-    /\ execution_idx \in 1..(BlockSize + 1)
-    /\ validation_idx \in 1..(BlockSize + 1)
-    /\ commit_idx \in 1..(BlockSize + 1)
-    /\ active_tasks \in 0..Executors
-    /\ validation_wave \in Nat
-    /\ tasks \in [1..Executors -> Task \union {NoTask}]
-    /\ terminated \in [1..Executors -> BOOLEAN]
-    /\ tx_validated_wave \in [1..BlockSize -> Nat]
+TypeOK ≜
+    ∧ Tx!TypeOK
+    ∧ execution_idx ∈ 1‥(BlockSize + 1)
+    ∧ validation_idx ∈ 1‥(BlockSize + 1)
+    ∧ commit_idx ∈ 1‥(BlockSize + 1)
+    ∧ active_tasks ∈ 0‥Executors
+    ∧ validation_wave ∈ ℕ
+    ∧ tasks ∈ [1‥Executors → Task ∪ {NoTask}]
+    ∧ terminated ∈ [1‥Executors → BOOLEAN]
+    ∧ tx_validated_wave ∈ [1‥BlockSize → ℕ]
 
-Init ==
-    /\ Tx!Init
-    /\ execution_idx = 1
-    /\ validation_idx = 1
-    /\ commit_idx = 1
-    /\ active_tasks = 0
-    /\ validation_wave = 1  \* starts from 1, 0 is reserved for not validated status
-    /\ tasks = [e \in 1..Executors |-> NoTask]
-    /\ terminated = [e \in 1..Executors |-> FALSE]
-    /\ tx_validated_wave = [txn \in 1..BlockSize |-> 0]
+Init ≜
+    ∧ Tx!Init
+    ∧ execution_idx = 1
+    ∧ validation_idx = 1
+    ∧ commit_idx = 1
+    ∧ active_tasks = 0
+    ∧ validation_wave = 1  \* starts from 1, 0 is reserved for not validated status
+    ∧ tasks = [e ∈ 1‥Executors ↦ NoTask]
+    ∧ terminated = [e ∈ 1‥Executors ↦ FALSE]
+    ∧ tx_validated_wave = [txn ∈ 1‥BlockSize ↦ 0]
 
-PreferValidation == validation_idx < execution_idx
+PreferValidation ≜ validation_idx < execution_idx
 
-NextTaskExecution(e) ==
-    /\ ~PreferValidation
-    /\ execution_idx < BlockSize + 1
-    /\ execution_idx' = execution_idx + 1
-    /\ tasks' = [tasks EXCEPT ![e] = [txn |-> execution_idx, kind |-> "Execution"]]
-    /\ UNCHANGED << validation_idx >>
+NextTaskExecution(e) ≜
+    ∧ ¬PreferValidation
+    ∧ execution_idx < BlockSize + 1
+    ∧ execution_idx' = execution_idx + 1
+    ∧ tasks' = [tasks EXCEPT ![e] = [txn ↦ execution_idx, kind ↦ "Execution"]]
+    ∧ UNCHANGED ⟨ validation_idx ⟩
 
-NextTaskValidation(e) ==
-    /\ PreferValidation
-    /\ validation_idx < BlockSize + 1
-    /\ validation_idx' = validation_idx + 1
-    /\ tasks' = [tasks EXCEPT ![e] = [txn |-> validation_idx, kind |-> "Validation"]]
-    /\ UNCHANGED << execution_idx >>
+NextTaskValidation(e) ≜
+    ∧ PreferValidation
+    ∧ validation_idx < BlockSize + 1
+    ∧ validation_idx' = validation_idx + 1
+    ∧ tasks' = [tasks EXCEPT ![e] = [txn ↦ validation_idx, kind ↦ "Validation"]]
+    ∧ UNCHANGED ⟨ execution_idx ⟩
 
-FetchTask(e) ==
-    /\ tasks[e] = NoTask
-    /\ NextTaskExecution(e) \/ NextTaskValidation(e)
-    /\ active_tasks' = active_tasks + 1
-    /\ UNCHANGED << commit_idx, validation_wave, terminated, tx_validated_wave, txVars >>
+FetchTask(e) ≜
+    ∧ tasks[e] = NoTask
+    ∧ NextTaskExecution(e) ∨ NextTaskValidation(e)
+    ∧ active_tasks' = active_tasks + 1
+    ∧ UNCHANGED ⟨ commit_idx, validation_wave, terminated, tx_validated_wave, txVars ⟩
 
-ResetValidationIdx(txn) ==
+ResetValidationIdx(txn) ≜
     IF txn < validation_idx THEN
-        /\ validation_idx' = txn
-        /\ validation_wave' = validation_wave + 1
+        ∧ validation_idx' = txn
+        ∧ validation_wave' = validation_wave + 1
     ELSE
-        UNCHANGED << validation_idx, validation_wave >>
+        UNCHANGED ⟨ validation_idx, validation_wave ⟩
 
-SetTxValidatedWave(txn, wave) ==
+SetTxValidatedWave(txn, wave) ≜
     IF wave > tx_validated_wave[txn] THEN
         tx_validated_wave' = [tx_validated_wave EXCEPT ![txn] = wave]
     ELSE
         UNCHANGED tx_validated_wave
 
-ExecuteTx(e) ==
-    LET txn == tasks[e].txn IN
-    /\ tasks[e].kind = "Execution"
-    /\ Tx!TxExecute(txn)
-    /\ IF txn < validation_idx THEN
-         /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Validation"]]
-         /\ IF incarnation[txn] = 0 THEN \* only write new key in first incarnation
+ExecuteTx(e) ≜
+    LET txn ≜ tasks[e].txn IN
+    ∧ tasks[e].kind = "Execution"
+    ∧ Tx!TxExecute(txn)
+    ∧ IF txn < validation_idx THEN
+         ∧ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Validation"]]
+         ∧ IF incarnation[txn] = 0 THEN \* only write new key in first incarnation
              ResetValidationIdx(txn + 1)
            ELSE
-             UNCHANGED << validation_idx, validation_wave >>
-         /\ UNCHANGED << active_tasks >>
+             UNCHANGED ⟨ validation_idx, validation_wave ⟩
+         ∧ UNCHANGED ⟨ active_tasks ⟩
        ELSE
-         /\ tasks' = [tasks EXCEPT ![e] = NoTask]
-         /\ active_tasks' = active_tasks - 1
-         /\ UNCHANGED << validation_idx, validation_wave >>
-    /\ UNCHANGED << execution_idx, tx_validated_wave >>
+         ∧ tasks' = [tasks EXCEPT ![e] = NoTask]
+         ∧ active_tasks' = active_tasks - 1
+         ∧ UNCHANGED ⟨ validation_idx, validation_wave ⟩
+    ∧ UNCHANGED ⟨ execution_idx, tx_validated_wave ⟩
 
-ValidateTx(e) ==
-    LET txn == tasks[e].txn IN
-    /\ tasks[e].kind = "Validation"
-    /\ IF ENABLED Tx!TxValidate(txn) THEN
-        \/ Tx!TxValidateAbort(txn)
-          /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Execution"]]
-          /\ UNCHANGED << active_tasks, tx_validated_wave >>
+ValidateTx(e) ≜
+    LET txn ≜ tasks[e].txn IN
+    ∧ tasks[e].kind = "Validation"
+    ∧ IF ENABLED Tx!TxValidate(txn) THEN
+        ∨ Tx!TxValidateAbort(txn)
+          ∧ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Execution"]]
+          ∧ UNCHANGED ⟨ active_tasks, tx_validated_wave ⟩
 
-        \/ Tx!TxValidateOK(txn)
-          /\ tasks' = [tasks EXCEPT ![e] = NoTask]
-          /\ active_tasks' = active_tasks - 1
-          /\ SetTxValidatedWave(txn, validation_wave)
+        ∨ Tx!TxValidateOK(txn)
+          ∧ tasks' = [tasks EXCEPT ![e] = NoTask]
+          ∧ active_tasks' = active_tasks - 1
+          ∧ SetTxValidatedWave(txn, validation_wave)
       ELSE
-        /\ tasks' = [tasks EXCEPT ![e] = NoTask] \* skip if tx is not ready to validate
-        /\ active_tasks' = active_tasks - 1
-        /\ UNCHANGED << txVars, tx_validated_wave >>
-    /\ UNCHANGED << execution_idx, validation_idx, validation_wave >>
+        ∧ tasks' = [tasks EXCEPT ![e] = NoTask] \* skip if tx is not ready to validate
+        ∧ active_tasks' = active_tasks - 1
+        ∧ UNCHANGED ⟨ txVars, tx_validated_wave ⟩
+    ∧ UNCHANGED ⟨ execution_idx, validation_idx, validation_wave ⟩
 
-ExecTask(e) ==
-    /\ tasks[e] /= NoTask
-    /\ ExecuteTx(e) \/ ValidateTx(e)
-    /\ UNCHANGED << commit_idx, terminated >>
+ExecTask(e) ≜
+    ∧ tasks[e] ≠ NoTask
+    ∧ ExecuteTx(e) ∨ ValidateTx(e)
+    ∧ UNCHANGED ⟨ commit_idx, terminated ⟩
 
-CheckDone(e) ==
-    /\ ~terminated[e]
-    /\ validation_idx = BlockSize + 1
-    /\ execution_idx = BlockSize + 1
-    /\ active_tasks = 0
-    /\ terminated' = [terminated EXCEPT ![e] = TRUE]
-    /\ UNCHANGED << execution_idx, validation_idx, commit_idx, validation_wave, tasks, active_tasks, tx_validated_wave, txVars >>
+CheckDone(e) ≜
+    ∧ ¬terminated[e]
+    ∧ validation_idx = BlockSize + 1
+    ∧ execution_idx = BlockSize + 1
+    ∧ active_tasks = 0
+    ∧ terminated' = [terminated EXCEPT ![e] = TRUE]
+    ∧ UNCHANGED ⟨ execution_idx, validation_idx, commit_idx, validation_wave, tasks, active_tasks, tx_validated_wave, txVars ⟩
 
-Done(e) ==
-    /\ terminated[e]
-    /\ UNCHANGED vars
+Done(e) ≜
+    ∧ terminated[e]
+    ∧ UNCHANGED vars
 
-Executor(e) ==
-    CheckDone(e) \/ FetchTask(e) \/ ExecTask(e) \/ Done(e)
+Executor(e) ≜
+    CheckDone(e) ∨ FetchTask(e) ∨ ExecTask(e) ∨ Done(e)
 
-Next ==
-    \E e \in 1..Executors:
+Next ≜
+    ∃ e ∈ 1‥Executors:
         Executor(e)
 
 \* Properties
 
 \* Invariant: no two executors can execute the same transaction at the same time
-NoConcurrentExecution ==
-    \A e1, e2 \in 1..Executors:
-        (e1 /= e2) => ~(
-            /\ tasks[e1] /= NoTask
-            /\ tasks[e1].kind = "Execution"
-            /\ tasks[e2] = tasks[e1]
+NoConcurrentExecution ≜
+    ∀ e1, e2 ∈ 1‥Executors:
+        (e1 ≠ e2) ⇒ ¬(
+            ∧ tasks[e1] ≠ NoTask
+            ∧ tasks[e1].kind = "Execution"
+            ∧ tasks[e2] = tasks[e1]
         )
 
-AllDone == \A e \in 1..Executors: terminated[e]
+AllDone ≜ ∀ e ∈ 1‥Executors: terminated[e]
 
-Properties ==
-    /\ Tx!Properties
-    /\ [](AllDone => []AllDone)
-    /\ [](AllDone => Tx!Committed(BlockSize))
+Properties ≜
+    ∧ Tx!Properties
+    ∧ □(AllDone ⇒ □AllDone)
+    ∧ □(AllDone ⇒ Tx!Committed(BlockSize))
 
-Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
+Spec ≜ Init ∧ □[Next]_vars ∧ WF_vars(Next)
 
 ================================================================================
