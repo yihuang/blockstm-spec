@@ -153,25 +153,14 @@ TryCommit(e) ==
     /\ commit_idx' = commit_idx + 1
     /\ UNCHANGED << execution_idx, validation_idx, validation_wave, tasks, active_tasks, terminated, tx_validated_wave, txVars >>
 
-Executor(e) == CheckDone(e) \/ TryCommit(e) \/ FetchTask(e) \/ ExecTask(e)
-
 AllDone == \A e \in 1..Executors: terminated[e]
 
 Next ==
     \/ AllDone /\ UNCHANGED vars
-    \/ \E e \in 1..Executors: Executor(e)
-
-FetchTaskAny == \E e \in 1..Executors: FetchTask(e)
-ExecTaskAny == \E e \in 1..Executors: ExecTask(e)
-CheckDoneAny == \E e \in 1..Executors: CheckDone(e)
-TryCommitAny == \E e \in 1..Executors: TryCommit(e)
-
-\* UI action groups that work based on Executors value
-NextUI ==
-    \/ FetchTaskAny
-    \/ ExecTaskAny
-    \/ CheckDoneAny
-    \/ TryCommitAny
+    \/ \E e \in 1..Executors: CheckDone(e)
+    \/ \E e \in 1..Executors: TryCommit(e)
+    \/ \E e \in 1..Executors: FetchTask(e)
+    \/ \E e \in 1..Executors: ExecTask(e)
 
 \* Properties
 

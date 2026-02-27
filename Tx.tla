@@ -112,8 +112,8 @@ Init ==
     /\ readSet = [i \in TxIndex |-> <<>>]
 
 Next ==
-    \E txn \in TxIndex:
-        TxExecute(txn) \/ TxValidate(txn)
+    \/ \E txn \in TxIndex: TxExecute(txn)
+    \/ \E txn \in TxIndex: TxValidate(txn)
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
