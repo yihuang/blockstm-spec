@@ -17,7 +17,6 @@ VARIABLES
     \* global shared counters
     execution_idx, \* the next transaction to execute
     validation_idx, \* the next transaction to validate
-    commit_idx, \* the next transaction to commit
     active_tasks, \* the number of currently active tasks
     validation_wave, \* validation wave counter, used to establish order of validation events
 
@@ -29,7 +28,7 @@ VARIABLES
     tx_validated_wave \* the biggest wave number when each transaction was validated succesfully
 
 txVars == << mem, execStatus, incarnation, readSet >>
-vars == << txVars, execution_idx, validation_idx, commit_idx, active_tasks, validation_wave, tasks, terminated, tx_validated_wave >>
+vars == << txVars, execution_idx, validation_idx, active_tasks, validation_wave, tasks, terminated, tx_validated_wave >>
 
 Task == [
     txn: Tx!TxIndex ,
@@ -41,7 +40,6 @@ TypeOK ==
     /\ Tx!TypeOK
     /\ execution_idx \in 1..(BlockSize + 1)
     /\ validation_idx \in 1..(BlockSize + 1)
-    /\ commit_idx \in 1..(BlockSize + 1)
     /\ active_tasks \in 0..Executors
     /\ validation_wave \in Nat
     /\ tasks \in [1..Executors -> Task \union {NoTask}]
@@ -52,7 +50,6 @@ Init ==
     /\ Tx!Init
     /\ execution_idx = 1
     /\ validation_idx = 1
-    /\ commit_idx = 1
     /\ active_tasks = 0
     /\ validation_wave = 1  \* starts from 1, 0 is reserved for not validated status
     /\ tasks = [e \in 1..Executors |-> NoTask]
@@ -76,10 +73,11 @@ NextTaskValidation(e) ==
     /\ UNCHANGED << execution_idx >>
 
 FetchTask(e) ==
+    /\ ~terminated[e]
     /\ tasks[e] = NoTask
     /\ NextTaskExecution(e) \/ NextTaskValidation(e)
     /\ active_tasks' = active_tasks + 1
-    /\ UNCHANGED << commit_idx, validation_wave, terminated, tx_validated_wave, txVars >>
+    /\ UNCHANGED << validation_wave, terminated, tx_validated_wave, txVars >>
 
 ResetValidationIdx(txn) ==
     IF txn < validation_idx THEN
@@ -130,9 +128,10 @@ ValidateTx(e) ==
     /\ UNCHANGED << execution_idx, validation_idx, validation_wave >>
 
 ExecTask(e) ==
+    /\ ~terminated[e]
     /\ tasks[e] /= NoTask
     /\ ExecuteTx(e) \/ ValidateTx(e)
-    /\ UNCHANGED << commit_idx, terminated >>
+    /\ UNCHANGED << terminated >>
 
 CheckDone(e) ==
     /\ ~terminated[e]
@@ -140,7 +139,7 @@ CheckDone(e) ==
     /\ execution_idx = BlockSize + 1
     /\ active_tasks = 0
     /\ terminated' = [terminated EXCEPT ![e] = TRUE]
-    /\ UNCHANGED << execution_idx, validation_idx, commit_idx, validation_wave, tasks, active_tasks, tx_validated_wave, txVars >>
+    /\ UNCHANGED << execution_idx, validation_idx, validation_wave, tasks, active_tasks, tx_validated_wave, txVars >>
 
 Done(e) ==
     /\ terminated[e]
@@ -181,7 +180,7 @@ AllDone == \A e \in 1..Executors: terminated[e]
 Properties ==
     /\ Tx!Properties
     /\ [](AllDone => []AllDone)
-    /\ [](AllDone => Tx!Committed(BlockSize))
+    /\ [](AllDone => Tx!CommittedTxn = BlockSize)
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 

@@ -19,10 +19,9 @@ VARIABLES
     mem, \* multi-version memory
     execStatus, \* execution status of transactions
     incarnation, \* incarnation numbers of transactions
-    readSet, \* the read set of transactions, used for validation
-    committed  \* tracking the index of the last committed transaction
+    readSet \* the read set of transactions, used for validation
 
-vars == << mem, execStatus, incarnation, readSet, committed >>
+vars == << mem, execStatus, incarnation, readSet >>
 
 ExecStatus == {
     "ReadyToExecute", \* ok to execute
@@ -35,7 +34,6 @@ TypeOK ==
     /\ execStatus \in [TxIndex -> ExecStatus]
     /\ incarnation \in [TxIndex -> Nat]
     /\ readSet \in [TxIndex -> Dict]
-    /\ committed \in TxIndex \cup {0}
 
 \* execute tx logic
 ExecuteTx(txn) ==
@@ -61,19 +59,17 @@ TxReexecute(txn) ==
 
 TxExecute(txn) ==
     /\ TxFirstExecute(txn) \/ TxReexecute(txn)
-    /\ UNCHANGED committed
 
 TxValidateOK(txn) ==
     /\ execStatus[txn] = "Executed"
     /\ ValidateTx(txn)
-    /\ IF committed = txn - 1 THEN committed' = txn ELSE UNCHANGED committed
     /\ UNCHANGED << mem, execStatus, incarnation, readSet >>
 
 TxValidateAbort(txn) ==
     /\ execStatus[txn] = "Executed"
     /\ ~ValidateTx(txn)
     /\ execStatus' = [execStatus EXCEPT ![txn] = "Aborting"]
-    /\ UNCHANGED << mem, incarnation, readSet, committed >>
+    /\ UNCHANGED << mem, incarnation, readSet >>
 
 TxValidate(txn) == TxValidateOK(txn) \/ TxValidateAbort(txn)
 
@@ -89,23 +85,31 @@ SeqState(txn) ==
 \* executed and validated successfully, prerequisite for commit
 CleanExecuted(txn) == execStatus[txn] = "Executed" /\ ValidateTx(txn)
 
+\* logical committed transaction index (all txs in 1..txn are clean executed, txn+1 is not executed or not clean executed), 0 if no committed txn
+CommittedTxn == CHOOSE txn \in 0..BlockSize:
+    \/ /\ txn = 0
+      /\ ~CleanExecuted(1)
+    \/ /\ \A i \in 1..txn: CleanExecuted(i)
+      /\ (txn = BlockSize \/ ~CleanExecuted(txn + 1))
+
 \* the state is consistent with sequential execution result after executing txn
 ConsistentState(txn) == ViewMem(mem, Storage, txn+1) = SeqState(txn)
 
 \* validate committed states
 CommittedState == [](
-    \A txn \in 1..committed: ConsistentState(txn) /\ CleanExecuted(txn)
+    \A txn \in 1..CommittedTxn: ConsistentState(txn)
 )
 
 \* all txs are committed eventually
-EventuallyCommitted == <>[](committed = BlockSize)
+EventuallyCommitted == <>[](CommittedTxn = BlockSize)
+
+Properties == EventuallyCommitted /\ CommittedState
 
 Init ==
     /\ mem = EmptyMem
     /\ execStatus = [i \in TxIndex |-> "ReadyToExecute"]
     /\ incarnation = [i \in TxIndex |-> 0]
     /\ readSet = [i \in TxIndex |-> <<>>]
-    /\ committed = 0
 
 Next ==
     \E txn \in TxIndex:
