@@ -47,33 +47,18 @@ ExecuteTx(txn) ==
 
 ValidateTx(txn) == ViewMem(mem, Storage, txn) = readSet[txn]
 
-TxFirstExecute(txn) ==
+TxExecute(txn) ==
     /\ execStatus[txn] = "ReadyToExecute"
     /\ execStatus' = [execStatus EXCEPT ![txn] = "Executed"]
     /\ ExecuteTx(txn)
     /\ UNCHANGED incarnation
 
-TxReexecute(txn) ==
-    /\ execStatus[txn] = "Aborting"
-    /\ execStatus' = [execStatus EXCEPT ![txn] = "Executed"]
-    /\ ExecuteTx(txn)
-    /\ incarnation' = [incarnation EXCEPT ![txn] = @ + 1]
-
-TxExecute(txn) ==
-    /\ TxFirstExecute(txn) \/ TxReexecute(txn)
-
-TxValidateOK(txn) ==
-    /\ execStatus[txn] = "Executed"
-    /\ ValidateTx(txn)
-    /\ UNCHANGED << mem, execStatus, incarnation, readSet >>
-
 TxValidateAbort(txn) ==
     /\ execStatus[txn] = "Executed"
     /\ ~ValidateTx(txn)
-    /\ execStatus' = [execStatus EXCEPT ![txn] = "Aborting"]
-    /\ UNCHANGED << mem, incarnation, readSet >>
-
-TxValidate(txn) == TxValidateOK(txn) \/ TxValidateAbort(txn)
+    /\ execStatus' = [execStatus EXCEPT ![txn] = "ReadyToExecute"]
+    /\ incarnation' = [incarnation EXCEPT ![txn] = @ + 1]
+    /\ UNCHANGED << mem, readSet >>
 
 ApplyTx(st) == ApplyChanges(st, Tx(st))
 
@@ -87,25 +72,23 @@ SeqState(txn) ==
 \* executed and validated successfully, prerequisite for commit
 CleanExecuted(txn) == execStatus[txn] = "Executed" /\ ValidateTx(txn)
 
-\* logical committed transaction index (all txs in 1..txn are clean executed, txn+1 is not executed or not clean executed), 0 if no committed txn
+\* transaction commitment is defined as a whole prefix of transactions are executed and validated successfully.
+\* 0 is always committed as the base case, and out of range indics are never committed.
+Committed(txn) ==
+    \/ txn = 0
+    \/ txn \in TxIndex /\ \A i \in 1..txn: CleanExecuted(i)
+
+\* the largest committed transaction index, 0 if no transaction is committed.
 CommittedTxn == CHOOSE txn \in 0..BlockSize:
-    \/ /\ txn = 0
-      /\ ~CleanExecuted(1)
-    \/ /\ \A i \in 1..txn: CleanExecuted(i)
-      /\ (txn = BlockSize \/ ~CleanExecuted(txn + 1))
+    Committed(txn) /\ ~Committed(txn+1)
 
-\* the state is consistent with sequential execution result after executing txn
+\* compare the state of a transaction against the sequential execution state.
 ConsistentState(txn) == ViewMem(mem, Storage, txn+1) = SeqState(txn)
-
-\* validate committed states
-CommittedState == [](
-    \A txn \in 1..CommittedTxn: ConsistentState(txn)
-)
 
 \* all txs are committed eventually
 EventuallyCommitted == <>[](CommittedTxn = BlockSize)
 
-Properties == EventuallyCommitted /\ CommittedState
+Properties == EventuallyCommitted /\ []ConsistentState(CommittedTxn)
 
 Init ==
     /\ mem = EmptyMem
@@ -114,8 +97,9 @@ Init ==
     /\ readSet = [i \in TxIndex |-> <<>>]
 
 Next ==
+    \/ (\A txn \in TxIndex: CleanExecuted(txn)) /\ UNCHANGED vars
     \/ \E txn \in TxIndex: TxExecute(txn)
-    \/ \E txn \in TxIndex: TxValidate(txn)
+    \/ \E txn \in TxIndex: TxValidateAbort(txn)
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
