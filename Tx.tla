@@ -97,7 +97,7 @@ Init ==
     /\ readSet = [i \in TxIndex |-> <<>>]
 
 Next ==
-    \/ (\A txn \in TxIndex: CleanExecuted(txn)) /\ UNCHANGED vars
+    \/ Committed(BlockSize) /\ UNCHANGED vars
     \/ \E txn \in TxIndex: TxExecute(txn)
     \/ \E txn \in TxIndex: TxValidateAbort(txn)
 
