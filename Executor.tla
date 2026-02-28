@@ -82,7 +82,7 @@ FetchTask(e) ==
     /\ active_tasks' = active_tasks + 1
     /\ UNCHANGED << validation_wave, terminated, tx_validated_wave, commit_idx, txVars >>
 
-ResetValidationIdx(txn) ==
+DecreaseValidationIdx(txn) ==
     IF txn < validation_idx THEN
         /\ validation_idx' = txn
         /\ validation_wave' = validation_wave + 1
@@ -106,7 +106,7 @@ ExecuteTx(e) ==
     /\ IF txn < validation_idx THEN
          /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Validation"]]
          /\ IF incarnation[txn] = 0 THEN \* only write new key in first incarnation
-             ResetValidationIdx(txn + 1)
+             DecreaseValidationIdx(txn + 1)
            ELSE
              UNCHANGED << validation_idx, validation_wave >>
          /\ UNCHANGED << active_tasks >>
@@ -120,15 +120,16 @@ ValidateTx(e) ==
     /\ tasks[e].kind = "Validation"
     /\ IF execStatus[txn] /= "Executed"
       THEN /\ ClearTask(e)
-           /\ UNCHANGED << tx_validated_wave, txVars >>
+           /\ UNCHANGED << validation_idx, validation_wave, tx_validated_wave, txVars >>
       ELSE IF Tx!ValidateTx(txn)
         THEN /\ ClearTask(e)
              /\ SetTxValidatedWave(txn, validation_wave)
-             /\ UNCHANGED txVars
+             /\ UNCHANGED << validation_idx, validation_wave, txVars >>
         ELSE /\ Tx!TxValidateAbort(txn)
              /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Execution"]]
+             /\ DecreaseValidationIdx(txn + 1)
              /\ UNCHANGED << active_tasks, tx_validated_wave >>
-    /\ UNCHANGED << execution_idx, validation_idx, validation_wave, terminated >>
+    /\ UNCHANGED << execution_idx, terminated >>
 
 ExecTask(e) ==
     /\ ~terminated[e]
