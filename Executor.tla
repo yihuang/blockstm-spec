@@ -1,7 +1,7 @@
 ------------------------------- MODULE Executor --------------------------------
 EXTENDS Integers, Sequences, FiniteSets
 
-CONSTANTS Key, Val, NoVal, BlockSize, Executors, NoTask
+CONSTANTS Key, NoVal, BlockSize, Executors, NoTask
 
 ASSUME Executors # {}
 

@@ -1,11 +1,13 @@
 ---------------------------------- MODULE Tx -----------------------------------
 EXTENDS Sequences, Integers, TLC
 
-CONSTANTS Key, Val, NoVal, BlockSize
+CONSTANTS Key, NoVal, BlockSize
 
-INSTANCE Mem
+INSTANCE Mem WITH
+    \* assume value starts at 0 and each tx increase the value at most by 1,
+    \* so the value should never exceed BlockSize.
+    Val <- 0..BlockSize
 
-ASSUME Val \subseteq Nat
 ASSUME BlockSize > 0
 
 Storage == [k \in Key |-> 0]
