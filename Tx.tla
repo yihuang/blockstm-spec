@@ -33,7 +33,7 @@ TypeOK ==
     /\ TypeOKMem(mem)
     /\ execStatus \in [TxIndex -> ExecStatus]
     /\ incarnation \in [TxIndex -> Nat]
-    /\ readSet \in [TxIndex -> Dict]
+    /\ readSet \in [TxIndex -> Overlay]
 
 \* execute tx logic
 ExecuteTx(txn) ==
@@ -73,7 +73,7 @@ TxValidateAbort(txn) ==
 
 TxValidate(txn) == TxValidateOK(txn) \/ TxValidateAbort(txn)
 
-ApplyTx(st) == ApplyOverlay(st, Tx(st))
+ApplyTx(st) == ApplyChanges(st, Tx(st))
 
 \* the committed state when transactions are executed sequentially
 SeqState(txn) ==
