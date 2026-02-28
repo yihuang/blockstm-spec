@@ -1,9 +1,9 @@
 ------------------------------- MODULE Executor --------------------------------
-EXTENDS Integers, Sequences
+EXTENDS Integers, Sequences, FiniteSets
 
 CONSTANTS Key, Val, NoVal, BlockSize, Executors, NoTask
 
-ASSUME Executors \in Nat
+ASSUME Executors # {}
 
 VARIABLES
     mem, \* multi-version memory
@@ -42,10 +42,10 @@ TypeOK ==
     /\ execution_idx \in 1..(BlockSize + 1)
     /\ validation_idx \in 1..(BlockSize + 1)
     /\ commit_idx \in 1..(BlockSize + 1)
-    /\ active_tasks \in 0..Executors
+    /\ active_tasks \in 0..Cardinality(Executors)
     /\ validation_wave \in Nat
-    /\ tasks \in [1..Executors -> Task \union {NoTask}]
-    /\ terminated \in [1..Executors -> BOOLEAN]
+    /\ tasks \in [Executors -> Task \union {NoTask}]
+    /\ terminated \in [Executors -> BOOLEAN]
     /\ tx_validated_wave \in [1..BlockSize -> Nat]
 
 Init ==
@@ -55,8 +55,8 @@ Init ==
     /\ commit_idx = 1
     /\ active_tasks = 0
     /\ validation_wave = 1  \* starts from 1, 0 is reserved for not validated status
-    /\ tasks = [e \in 1..Executors |-> NoTask]
-    /\ terminated = [e \in 1..Executors |-> FALSE]
+    /\ tasks = [e \in Executors |-> NoTask]
+    /\ terminated = [e \in Executors |-> FALSE]
     /\ tx_validated_wave = [txn \in 1..BlockSize |-> 0]
 
 PreferValidation == validation_idx < execution_idx
@@ -153,20 +153,20 @@ TryCommit(e) ==
     /\ commit_idx' = commit_idx + 1
     /\ UNCHANGED << execution_idx, validation_idx, validation_wave, tasks, active_tasks, terminated, tx_validated_wave, txVars >>
 
-AllDone == \A e \in 1..Executors: terminated[e]
+AllDone == \A e \in Executors: terminated[e]
 
 Next ==
     \/ AllDone /\ UNCHANGED vars
-    \/ \E e \in 1..Executors: CheckDone(e)
-    \/ \E e \in 1..Executors: TryCommit(e)
-    \/ \E e \in 1..Executors: FetchTask(e)
-    \/ \E e \in 1..Executors: ExecTask(e)
+    \/ \E e \in Executors: CheckDone(e)
+    \/ \E e \in Executors: TryCommit(e)
+    \/ \E e \in Executors: FetchTask(e)
+    \/ \E e \in Executors: ExecTask(e)
 
 \* Properties
 
 \* Invariant: no two executors can execute the same transaction at the same time
 NoConcurrentExecution ==
-    \A e1, e2 \in 1..Executors:
+    \A e1, e2 \in Executors:
         (e1 /= e2) => ~(
             /\ tasks[e1] /= NoTask
             /\ tasks[e1].kind = "Execution"
