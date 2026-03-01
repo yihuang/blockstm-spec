@@ -58,7 +58,8 @@ TxValidateAbort(txn) ==
     /\ ~ValidateTx(txn)
     /\ execStatus' = [execStatus EXCEPT ![txn] = "ReadyToExecute"]
     /\ incarnation' = [incarnation EXCEPT ![txn] = @ + 1]
-    /\ UNCHANGED << mem, readSet >>
+    /\ mem' = [mem EXCEPT ![txn] = <<>>]
+    /\ UNCHANGED << readSet >>
 
 ApplyTx(st) == ApplyChanges(st, Tx(st))
 

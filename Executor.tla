@@ -99,13 +99,16 @@ ClearTask(e) ==
     /\ tasks' = [tasks EXCEPT ![e] = NoTask]
     /\ active_tasks' = active_tasks - 1
 
+WroteNewLocation(old, new) ==
+    DOMAIN new \ DOMAIN old /= {}
+
 ExecuteTx(e) ==
     LET txn == tasks[e].txn IN
     /\ tasks[e].kind = "Execution"
     /\ Tx!TxExecute(txn)
     /\ IF txn < validation_idx THEN
          /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Validation"]]
-         /\ IF incarnation[txn] = 0 THEN \* only write new key in first incarnation
+         /\ IF WroteNewLocation(mem[txn], mem'[txn]) THEN
              DecreaseValidationIdx(txn + 1)
            ELSE
              UNCHANGED << validation_idx, validation_wave >>
