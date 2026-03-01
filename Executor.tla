@@ -59,7 +59,13 @@ Init ==
     /\ terminated = [e \in Executors |-> FALSE]
     /\ tx_validated_wave = [txn \in 1..BlockSize |-> 0]
 
-PreferValidation == validation_idx < execution_idx
+ExecutedOnce(txn) ==
+    \/ execStatus[txn] = "Executed"
+    \/ incarnation[txn] > 0
+
+PreferValidation ==
+    /\ validation_idx < execution_idx
+    /\ ExecutedOnce(validation_idx)
 
 NextTaskExecution(e) ==
     /\ ~PreferValidation

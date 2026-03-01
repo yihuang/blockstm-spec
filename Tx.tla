@@ -27,8 +27,7 @@ vars == << mem, execStatus, incarnation, readSet >>
 
 ExecStatus == {
     "ReadyToExecute", \* ok to execute
-    "Executed", \* ok to validate
-    "Aborting" \* failed validation, ok to re-execute
+    "Executed" \* ok to validate
 }
 
 TypeOK ==
