@@ -32,9 +32,23 @@ TaskLabel(t) ==
 
 ExecutorCardColor(e) == IF terminated[e] THEN "#bbf7d0" ELSE "#e5e7eb"
 
+PreferredExecutors == {e \in Executors: e \in {1, 2}}
+ExecutorSet == IF PreferredExecutors # {} THEN PreferredExecutors ELSE Executors
+ExecCount == Cardinality(ExecutorSet)
+
+RECURSIVE SetToSeqSafe(_)
+SetToSeqSafe(S) ==
+    IF S = {} THEN
+        <<>>
+    ELSE
+        LET x == CHOOSE y \in S: TRUE
+        IN <<x>> \o SetToSeqSafe(S \ {x})
+
+ExecutorSeq == SetToSeqSafe(ExecutorSet)
+
 ExecCols ==
-    IF Executors <= 2 THEN Executors
-    ELSE IF Executors <= 6 THEN 3
+    IF ExecCount <= 2 THEN ExecCount
+    ELSE IF ExecCount <= 6 THEN 3
     ELSE 4
 
 ExecCardWidth == 230
@@ -44,7 +58,7 @@ ExecRowStep == 82
 ExecGridLeft == 16
 ExecGridTop == 62
 
-ExecRows == IF Executors = 0 THEN 0 ELSE ((Executors + ExecCols - 1) \div ExecCols)
+ExecRows == IF ExecCount = 0 THEN 0 ELSE ((ExecCount + ExecCols - 1) \div ExecCols)
 
 TxCols ==
     IF BlockSize <= 4 THEN BlockSize
@@ -72,7 +86,7 @@ HeaderElems ==
              ("fill" :> "black" @@ "font-size" :> "12" @@ "font-family" :> "monospace"))
     >>
 
-ExecutorCard(e) ==
+ExecutorCard(e, idx) ==
     Group(
         <<
             Rect(0, 0, 230, 70, [fill |-> ExecutorCardColor(e), stroke |-> "black", rx |-> 8]),
@@ -80,10 +94,10 @@ ExecutorCard(e) ==
             Text(10, 40, "task: " \o TaskLabel(tasks[e]), ("fill" :> "black" @@ "font-size" :> "11" @@ "font-family" :> "monospace")),
             Text(10, 58, "terminated: " \o ToString(terminated[e]), ("fill" :> "black" @@ "font-size" :> "11" @@ "font-family" :> "monospace"))
         >>,
-        [transform |-> "translate(" \o ToString(ExecGridLeft + ExecColStep * ((e - 1) % ExecCols)) \o "," \o ToString(ExecGridTop + ExecRowStep * ((e - 1) \div ExecCols)) \o ")"]
+        [transform |-> "translate(" \o ToString(ExecGridLeft + ExecColStep * ((idx - 1) % ExecCols)) \o "," \o ToString(ExecGridTop + ExecRowStep * ((idx - 1) \div ExecCols)) \o ")"]
     )
 
-ExecutorCards == [e \in 1..Executors |-> ExecutorCard(e)]
+ExecutorCards == [i \in 1..ExecCount |-> ExecutorCard(ExecutorSeq[i], i)]
 
 TxStatusBox(txn) ==
     Group(
