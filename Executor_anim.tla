@@ -32,8 +32,7 @@ TaskLabel(t) ==
 
 ExecutorCardColor(e) == IF terminated[e] THEN "#bbf7d0" ELSE "#e5e7eb"
 
-PreferredExecutors == {e \in Executors: e \in {1, 2}}
-ExecutorSet == IF PreferredExecutors # {} THEN PreferredExecutors ELSE Executors
+ExecutorSet == Executors
 ExecCount == Cardinality(ExecutorSet)
 
 RECURSIVE SetToSeqSafe(_)
