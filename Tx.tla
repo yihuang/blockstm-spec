@@ -91,14 +91,15 @@ EventuallyCommitted == <>[]Committed[BlockSize]
 
 \* Failed validation leads to re-execution
 FailedValidationIncreaseIncarnation ==
-    \A txn \in 1..BlockSize:
+    LET txn == BlockSize IN  \* only check one transaction for simplicity, but it can be generalized to all transactions.
+    \* \A txn \in 1..BlockSize:
         \A n \in 0..10:
             incarnation[txn] = n /\ execStatus[txn]="Executed" /\ ~ValidateTx(txn) ~> execStatus[txn]="Executed" /\ incarnation[txn] > n
 
 Properties ==
     /\ EventuallyCommitted
     /\ []ConsistentState(CommittedTxn)
-    \* /\ FailedValidationIncreaseIncarnation \* slow to check
+    /\ FailedValidationIncreaseIncarnation
 
 Init ==
     /\ mem = EmptyMem
