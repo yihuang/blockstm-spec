@@ -89,7 +89,16 @@ ConsistentState(txn) == ViewMem(mem, Storage, txn+1) = SeqState(txn)
 \* all txs are committed eventually
 EventuallyCommitted == <>[]Committed[BlockSize]
 
-Properties == EventuallyCommitted /\ []ConsistentState(CommittedTxn)
+\* Failed validation leads to re-execution
+FailedValidationIncreaseIncarnation ==
+    \A txn \in 1..BlockSize:
+        \A n \in 0..10:
+            incarnation[txn] = n /\ execStatus[txn]="Executed" /\ ~ValidateTx(txn) ~> execStatus[txn]="Executed" /\ incarnation[txn] > n
+
+Properties ==
+    /\ EventuallyCommitted
+    /\ []ConsistentState(CommittedTxn)
+    \* /\ FailedValidationIncreaseIncarnation \* slow to check
 
 Init ==
     /\ mem = EmptyMem
