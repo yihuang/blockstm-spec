@@ -73,20 +73,21 @@ SeqState(txn) ==
 CleanExecuted(txn) == execStatus[txn] = "Executed" /\ ValidateTx(txn)
 
 \* transaction commitment is defined as a whole prefix of transactions are executed and validated successfully.
-\* 0 is always committed as the base case, and out of range indics are never committed.
-Committed(txn) ==
-    \/ txn = 0
-    \/ txn \in TxIndex /\ \A i \in 1..txn: CleanExecuted(i)
+\* 0 is always committed as the base case.
+Committed[txn \in 0..BlockSize] ==
+    IF txn = 0 THEN TRUE
+    ELSE Committed[txn - 1] /\ CleanExecuted(txn)
 
 \* the largest committed transaction index, 0 if no transaction is committed.
 CommittedTxn == CHOOSE txn \in 0..BlockSize:
-    Committed(txn) /\ ~Committed(txn+1)
+    /\ Committed[txn]
+    /\ txn = BlockSize \/ ~Committed[txn + 1]
 
 \* compare the state of a transaction against the sequential execution state.
 ConsistentState(txn) == ViewMem(mem, Storage, txn+1) = SeqState(txn)
 
 \* all txs are committed eventually
-EventuallyCommitted == <>[](CommittedTxn = BlockSize)
+EventuallyCommitted == <>[]Committed[BlockSize]
 
 Properties == EventuallyCommitted /\ []ConsistentState(CommittedTxn)
 
@@ -97,7 +98,7 @@ Init ==
     /\ readSet = [i \in TxIndex |-> <<>>]
 
 Next ==
-    \/ Committed(BlockSize) /\ UNCHANGED vars
+    \/ Committed[BlockSize] /\ UNCHANGED vars
     \/ \E txn \in TxIndex: TxExecute(txn)
     \/ \E txn \in TxIndex: TxValidateAbort(txn)
 
