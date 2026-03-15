@@ -1,5 +1,5 @@
 ---------------------------------- MODULE Mem ----------------------------------
-EXTENDS Sequences, Integers
+EXTENDS Sequences, Integers, FiniteSetsExt
 
 CONSTANTS Key, Val, NoVal, BlockSize
 
@@ -9,8 +9,6 @@ INSTANCE Store
  * Mem is a naive implementation of multi-version memory,
  * where mem[i] is the overlay of changes for transaction i.
  *)
-
-Max(s) == CHOOSE i \in s: \A j \in s: j <= i
 
 TxIndex == 1..BlockSize
 
