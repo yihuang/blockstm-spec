@@ -1,9 +1,13 @@
 ---------------------------------- MODULE Mem ----------------------------------
 EXTENDS Sequences, Integers
 
-CONSTANTS Key, Val, NoVal, BlockSize
+CONSTANTS Key, Val, NoVal, BlockSize, Storage
+
+ASSUME Storage \in [Key -> Val] \* Initial state
 
 INSTANCE Store
+
+VARIABLE mem
 
 (*
  * Mem is a naive implementation of multi-version memory,
@@ -14,10 +18,10 @@ Max(s) == CHOOSE i \in s: \A j \in s: j <= i
 
 TxIndex == 1..BlockSize
 
-EmptyMem ==
-    [i \in TxIndex |-> <<>>]
+InitMem ==
+    mem = [i \in TxIndex |-> <<>>]
 
-TypeOKMem(mem) ==
+TypeOKMem ==
     mem \in [TxIndex -> Overlay]
 
 (*
@@ -25,29 +29,29 @@ TypeOKMem(mem) ==
  * i.e. the largest index i < txn such that mem[i] contains the key,
  * returns 0 if not found.
  *)
-FindMem(mem, key, txn) ==
+FindMem(key, txn) ==
     LET cs == {i \in 1..(txn - 1): key \in DOMAIN mem[i]} IN
         IF cs = {} THEN 0 ELSE Max(cs)
 
 (*
  * Read the value for key as seen by transaction txn,
- * if not found, read from the storage,
- * storage is defined on the domain of Key.
+ * if not found, read from the Storage,
+ * Storage is defined on the domain of Key.
  *)
-ReadMem(mem, storage, key, txn) ==
-    LET idx == FindMem(mem, key, txn)
+ReadMem(key, txn) ==
+    LET idx == FindMem(key, txn)
     IN IF idx = 0
-        THEN storage[key]
+        THEN Storage[key]
         ELSE mem[idx][key]
 
 \* Write changes cs for transaction txn to mem.
-WriteMem(mem, txn, cs) == [mem EXCEPT ![txn] = cs]
+WriteMem(txn, cs) == mem' = [mem EXCEPT ![txn] = cs]
 
 (*
  * returns the visible key value pairs for transaction txn,
  * i.e. the union of all mem[i] for i < txn, with bigger i taking precedence
  * for the same key.
  *)
-ViewMem(mem, storage, txn) == [k \in Key |-> ReadMem(mem, storage, k, txn)]
+ViewMem(txn) == [k \in Key |-> ReadMem(k, txn)]
 
 ================================================================================
