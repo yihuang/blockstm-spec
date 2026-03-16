@@ -17,7 +17,7 @@ ASSUME BlockSize > 0
 (* Tx is modeled as a function from read set to write set,
  * and assume all the txs in the block follow the same logic.
  *)
-Tx(reads) == [k \in DOMAIN reads |-> reads[k] + 1]
+Tx(reads) == [k \in Key |-> reads[k] + 1]
 
 VARIABLES
     execStatus, \* execution status of transactions
@@ -39,10 +39,9 @@ TypeOK ==
 
 \* execute tx logic
 ExecuteTx(txn) ==
-    LET reads == ViewMem(txn)
-        writes == Tx(reads)
+    LET reads == Storage
     IN
-        /\ WriteMem(txn, writes)
+        /\ mem' = [mem EXCEPT ![txn] = Tx(reads)]
         /\ readSet' = [readSet EXCEPT ![txn] = reads]
 
 ValidateTx(txn) == ViewMem(txn) = readSet[txn]

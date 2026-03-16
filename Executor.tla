@@ -108,6 +108,9 @@ ClearTask(e) ==
 WroteNewLocation(old, new) ==
     DOMAIN new \ DOMAIN old /= {}
 
+IsExecutionTask(t) ==
+    t.kind = "Execution"
+
 ExecuteTx(e) ==
     LET txn == tasks[e].txn IN
     /\ tasks[e].kind = "Execution"
@@ -143,7 +146,9 @@ ValidateTx(e) ==
 ExecTask(e) ==
     /\ ~terminated[e]
     /\ tasks[e] /= NoTask
-    /\ ExecuteTx(e) \/ ValidateTx(e)
+    /\ IF IsExecutionTask(tasks[e])
+       THEN ExecuteTx(e)
+       ELSE ValidateTx(e)
     /\ UNCHANGED << terminated, commit_idx >>
 
 CheckDone(e) ==
@@ -159,7 +164,7 @@ TryCommit(e) ==
     /\ ~terminated[e]
     /\ tasks[e] = NoTask
     /\ commit_idx <= BlockSize
-    /\ Tx!ValidateTx(commit_idx)
+    /\ execStatus[commit_idx] = "Executed"
     /\ commit_idx' = commit_idx + 1
     /\ UNCHANGED << execution_idx, validation_idx, validation_wave, tasks, active_tasks, terminated, tx_validated_wave, txVars >>
 
