@@ -108,13 +108,31 @@ ClearTask(e) ==
 WroteNewLocation(old, new) ==
     DOMAIN new \ DOMAIN old /= {}
 
+RECURSIVE ReadMemLocal(_, _)
+
+ReadMemLocal(key, txn) ==
+    IF txn <= 1 THEN Tx!Storage[key]
+    ELSE IF key \in DOMAIN mem[txn - 1] THEN mem[txn - 1][key]
+         ELSE ReadMemLocal(key, txn - 1)
+
+ViewMemLocal(txn) == [k \in Key |-> ReadMemLocal(k, txn)]
+
+TxLocal(reads) == [k \in Key |-> reads[k] + 1]
+
+ValidateTxLocal(txn) == ViewMemLocal(txn) = readSet[txn]
+
 IsExecutionTask(t) ==
     t.kind = "Execution"
 
 ExecuteTx(e) ==
     LET txn == tasks[e].txn IN
     /\ tasks[e].kind = "Execution"
-    /\ Tx!TxExecute(txn)
+    /\ execStatus[txn] = "ReadyToExecute"
+    /\ execStatus' = [execStatus EXCEPT ![txn] = "Executed"]
+    /\ UNCHANGED << incarnation >>
+    /\ LET reads == ViewMemLocal(txn) IN
+       /\ mem' = [mem EXCEPT ![txn] = TxLocal(reads)]
+       /\ readSet' = [readSet EXCEPT ![txn] = reads]
     /\ IF txn < validation_idx THEN
          /\ tasks' = [tasks EXCEPT ![e] = [@ EXCEPT !.kind = "Validation"]]
          /\ IF WroteNewLocation(mem[txn], mem'[txn]) THEN
@@ -133,7 +151,7 @@ ValidateTx(e) ==
     /\ IF execStatus[txn] /= "Executed"
       THEN /\ ClearTask(e)
            /\ UNCHANGED << validation_idx, validation_wave, tx_validated_wave, txVars >>
-      ELSE IF Tx!ValidateTx(txn)
+            ELSE IF ValidateTxLocal(txn)
         THEN /\ ClearTask(e)
              /\ SetTxValidatedWave(txn, validation_wave)
              /\ UNCHANGED << validation_idx, validation_wave, txVars >>
@@ -164,7 +182,7 @@ TryCommit(e) ==
     /\ ~terminated[e]
     /\ tasks[e] = NoTask
     /\ commit_idx <= BlockSize
-    /\ execStatus[commit_idx] = "Executed"
+    /\ ValidateTxLocal(commit_idx)
     /\ commit_idx' = commit_idx + 1
     /\ UNCHANGED << execution_idx, validation_idx, validation_wave, tasks, active_tasks, terminated, tx_validated_wave, txVars >>
 
