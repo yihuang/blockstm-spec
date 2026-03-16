@@ -12,8 +12,8 @@ INSTANCE Mem WITH
 
 VARIABLE rels \* relationships between read/write transactions
 
-\* Records a reader read a key which is wrote by a writer.
-\* 0 means the initial version, Absent means the reader don't read the key.
+\* Records that a reader read a key which is written by a writer.
+\* 0 means the initial version, Absent means the reader doesn't read the key.
 \* (reader_tx, key) -> writer_tx
 Relationship == [TxIndex \X Key -> TxIndex \cup {0, Absent}]
 
@@ -38,7 +38,7 @@ RecordWrite(w, key) ==
         ELSE w_cur
     ]
 
-\* when writer remove a key, e.g. a new incarnation don't write a key that's written before,
+\* when writer remove a key, e.g. a new incarnation doesn't write a key that's written before,
 \* remove the relationships that reads the writer for the key.
 RecordRemove(w, key) ==
     rels' = [ <<r, k>> \in TxIndex \X Key |->
@@ -96,7 +96,8 @@ NoWriteInBetween ==
             \/ \A txn \in (w + 1)..(r - 1):
                   k \notin DOMAIN mem[txn]
 
-\* the value do exists for all relationships, i.e. the relationship is not spurious.
+
+\* the writer performed an operation (write or delete) on the key for all relationships, i.e. the relationship is not spurious.
 ConsistentReads ==
     \A r \in TxIndex: \A k \in Key:
         LET w == rels[<<r, k>>] IN
