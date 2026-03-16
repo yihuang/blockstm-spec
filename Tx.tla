@@ -54,7 +54,7 @@ TxExecute(txn) ==
 
 TxValidateAbort(txn) ==
     /\ execStatus[txn] = "Executed"
-    /\ ~ValidateTx(txn)
+    /\ ValidateTx(txn) = FALSE
     /\ execStatus' = [execStatus EXCEPT ![txn] = "ReadyToExecute"]
     /\ incarnation' = [incarnation EXCEPT ![txn] = @ + 1]
     /\ mem' = [mem EXCEPT ![txn] = <<>>]
