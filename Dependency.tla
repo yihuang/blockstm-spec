@@ -14,6 +14,7 @@ VARIABLE rels \* relationships between read/write transactions
 
 \* Records a reader read a key which is wrote by a writer.
 \* 0 means the initial version, Absent means the reader don't read the key.
+\* (reader_tx, key) -> writer_tx
 Relationship == [TxIndex \X Key -> TxIndex \cup {0, Absent}]
 
 TypeOK ==
