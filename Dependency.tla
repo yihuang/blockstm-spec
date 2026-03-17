@@ -26,12 +26,12 @@ TypeOK ==
 \* when reader reads a key from multi-version Mem module
 RecordRead(r, k, w) == rels' = [rels EXCEPT ![<<r, k>>] = w]
 
-\* Functional form of RecordWrite: returns the updated rels when writer w writes key.
-ApplyWrite(w, key, r) ==
+\* Functional form of RecordWrite: returns the updated rels when writer w writes a set of keys.
+ApplyWrite(w, keys, r) ==
     [ <<rx, k>> \in TxIndex \X Key |->
         LET w_cur == r[<<rx, k>>] IN
         IF /\ w_cur /= Absent
-           /\ k = key
+           /\ k \in keys
            /\ rx > w
            /\ w_cur < w
         THEN w
@@ -39,40 +39,28 @@ ApplyWrite(w, key, r) ==
     ]
 
 \* when writer writes a key, the relationships that cross the writer should be updated.
-RecordWrite(w, key) == rels' = ApplyWrite(w, key, rels)
+RecordWrite(w, key) == rels' = ApplyWrite(w, {key}, rels)
 
-\* Functional form of RecordRemove: returns the updated rels when writer w removes key.
-ApplyRemove(w, key, r) ==
+\* Functional form of RecordRemove: returns the updated rels when writer w removes a set of keys.
+ApplyRemove(w, keys, r) ==
     [ <<rx, k>> \in TxIndex \X Key |->
         LET w_cur == r[<<rx, k>>] IN
-        IF k = key /\ w_cur = w
+        IF k \in keys /\ w_cur = w
         THEN Absent
         ELSE w_cur
     ]
 
 \* when writer remove a key, e.g. a new incarnation doesn't write a key that's written before,
 \* remove the relationships that reads the writer for the key.
-RecordRemove(w, key) == rels' = ApplyRemove(w, key, rels)
-
-RECURSIVE ApplyAllWrites(_, _, _)
-ApplyAllWrites(w, keys, r) ==
-    IF keys = {} THEN r
-    ELSE LET k == CHOOSE k \in keys: TRUE
-         IN ApplyAllWrites(w, keys \ {k}, ApplyWrite(w, k, r))
-
-RECURSIVE ApplyAllRemoves(_, _, _)
-ApplyAllRemoves(w, keys, r) ==
-    IF keys = {} THEN r
-    ELSE LET k == CHOOSE k \in keys: TRUE
-         IN ApplyAllRemoves(w, keys \ {k}, ApplyRemove(w, k, r))
+RecordRemove(w, key) == rels' = ApplyRemove(w, {key}, rels)
 
 Write(w, cs) ==
     /\ WriteMem(w, cs)
     /\ IF cs = <<>> /\ mem[w] = <<>> THEN
         UNCHANGED rels
       ELSE
-        rels' = ApplyAllRemoves(w, DOMAIN mem[w] \ DOMAIN cs,
-                    ApplyAllWrites(w, DOMAIN cs, rels))
+        rels' = ApplyRemove(w, DOMAIN mem[w] \ DOMAIN cs,
+                    ApplyWrite(w, DOMAIN cs, rels))
 
 Read(r, k) ==
     LET w == FindMem(k, r) IN
