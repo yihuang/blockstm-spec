@@ -26,7 +26,7 @@ TypeOK ==
 \* when reader reads a key from multi-version Mem module
 RecordRead(r, k, w) == rels' = [rels EXCEPT ![<<r, k>>] = w]
 
-\* Functional form of RecordWrite: returns the updated rels when writer w writes a set of keys.
+\* Returns the updated rels when writer w writes a set of keys.
 ApplyWrite(w, keys, r) ==
     [ <<rx, k>> \in TxIndex \X Key |->
         LET w_cur == r[<<rx, k>>] IN
@@ -38,10 +38,7 @@ ApplyWrite(w, keys, r) ==
         ELSE w_cur
     ]
 
-\* when writer writes a key, the relationships that cross the writer should be updated.
-RecordWrite(w, key) == rels' = ApplyWrite(w, {key}, rels)
-
-\* Functional form of RecordRemove: returns the updated rels when writer w removes a set of keys.
+\* Returns the updated rels when writer w removes a set of keys.
 ApplyRemove(w, keys, r) ==
     [ <<rx, k>> \in TxIndex \X Key |->
         LET w_cur == r[<<rx, k>>] IN
@@ -50,17 +47,10 @@ ApplyRemove(w, keys, r) ==
         ELSE w_cur
     ]
 
-\* when writer remove a key, e.g. a new incarnation doesn't write a key that's written before,
-\* remove the relationships that reads the writer for the key.
-RecordRemove(w, key) == rels' = ApplyRemove(w, {key}, rels)
-
 Write(w, cs) ==
     /\ WriteMem(w, cs)
-    /\ IF cs = <<>> /\ mem[w] = <<>> THEN
-        UNCHANGED rels
-      ELSE
-        rels' = ApplyRemove(w, DOMAIN mem[w] \ DOMAIN cs,
-                    ApplyWrite(w, DOMAIN cs, rels))
+    /\ rels' = ApplyRemove(w, DOMAIN mem[w] \ DOMAIN cs,
+                   ApplyWrite(w, DOMAIN cs, rels))
 
 Read(r, k) ==
     LET w == FindMem(k, r) IN
