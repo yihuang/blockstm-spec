@@ -2,14 +2,15 @@
 
 EXTENDS Integers
 
-CONSTANTS Key, NoVal, BlockSize
+CONSTANTS Key, Val, NoVal, BlockSize
+
+ASSUME Val /= {}
 
 VARIABLE mem
 
-Storage == [k \in Key |-> 0]
+Storage == [k \in Key |-> CHOOSE v \in Val : TRUE]
 
-INSTANCE Mem WITH
-    Val <- 0..1
+INSTANCE Mem
 
 VARIABLE rels \* relationships between read/write transactions
 
