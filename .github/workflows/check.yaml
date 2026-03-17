@@ -13,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        spec: [Tx, Executor]
+        spec: [Tx, Executor, Dependency]
 
     steps:
       - uses: actions/checkout@v4
