@@ -10,14 +10,16 @@ VARIABLE mem \* multi-version memory
 INSTANCE Mem WITH
     \* assume value starts at 0 and each tx increase the value at most by 1,
     \* so the value should never exceed BlockSize.
-    Val <- 0..BlockSize
+    Val <- 0..BlockSize,
+    Storage <- Storage,
+    mem <- mem
 
 ASSUME BlockSize > 0
 
 (* Tx is modeled as a function from read set to write set,
  * and assume all the txs in the block follow the same logic.
  *)
-Tx(reads) == [k \in Key |-> reads[k] + 1]
+Tx(reads) == [k \in DOMAIN reads |-> reads[k] + 1]
 
 VARIABLES
     execStatus, \* execution status of transactions
@@ -39,9 +41,10 @@ TypeOK ==
 
 \* execute tx logic
 ExecuteTx(txn) ==
-    LET reads == Storage
+    LET reads == ViewMem(txn)
+        writes == Tx(reads)
     IN
-        /\ mem' = [mem EXCEPT ![txn] = Tx(reads)]
+        /\ WriteMem(txn, writes)
         /\ readSet' = [readSet EXCEPT ![txn] = reads]
 
 ValidateTx(txn) == ViewMem(txn) = readSet[txn]
