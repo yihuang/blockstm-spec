@@ -23,25 +23,23 @@ TypeOK ==
 
 \* Specification
 
-\* when reader reads a key from multi-version Mem module
-RecordRead(r, k, w) == rels' = [rels EXCEPT ![<<r, k>>] = w]
-
-\* Returns the updated rels when writer w writes a set of keys.
-ApplyWrite(w, keys, r) ==
-    [ <<rx, k>> \in TxIndex \X Key |->
-        LET w_cur == r[<<rx, k>>] IN
+\* when writer writes a key, the relationships that cross the writer should be updated.
+RecordWrite(relations, w, keys) ==
+    [ <<r, k>> \in TxIndex \X Key |->
+        LET w_cur == relations[<<r, k>>] IN
         IF /\ w_cur /= Absent
            /\ k \in keys
-           /\ rx > w
+           /\ r > w
            /\ w_cur < w
         THEN w
         ELSE w_cur
     ]
 
-\* Returns the updated rels when writer w removes a set of keys.
-ApplyRemove(w, keys, r) ==
-    [ <<rx, k>> \in TxIndex \X Key |->
-        LET w_cur == r[<<rx, k>>] IN
+\* when writer remove a key, e.g. a new incarnation doesn't write a key that's written before,
+\* remove the relationships that reads the writer for the key.
+RecordRemove(relations, w, keys) ==
+    [ <<r, k>> \in TxIndex \X Key |->
+        LET w_cur == relations[<<r, k>>] IN
         IF k \in keys /\ w_cur = w
         THEN Absent
         ELSE w_cur
@@ -49,12 +47,13 @@ ApplyRemove(w, keys, r) ==
 
 Write(w, cs) ==
     /\ WriteMem(w, cs)
-    /\ rels' = ApplyRemove(w, DOMAIN mem[w] \ DOMAIN cs,
-                   ApplyWrite(w, DOMAIN cs, rels))
+    /\ LET wrote == RecordWrite(rels, w, DOMAIN cs)
+          removed == RecordRemove(wrote, w, DOMAIN mem[w] \ DOMAIN cs) IN
+      rels' = removed
 
 Read(r, k) ==
     LET w == FindMem(k, r) IN
-    /\ RecordRead(r, k, w)
+    /\ rels' = [rels EXCEPT ![<<r, k>>] = w]
     /\ UNCHANGED mem
 
 Init ==
@@ -101,7 +100,7 @@ ConsistentReads ==
             \/ w = 0
             \/ k \in DOMAIN mem[w]
 
-\* all the readers that reads a writer are `<=` the next writer for the same key, i.e. the relationships do not cross each other.
+\* all the readers that reads a writer are `<=` the next writer for the same key, i.e. the relationships do not overlap.
 RelationshipsDontOverlap ==
     \A r1, r2 \in TxIndex: \A k \in Key:
         LET w1 == rels[<<r1, k>>]
