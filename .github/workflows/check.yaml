@@ -17,12 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install tla-bin
-        run: npm install -g tla-bin
+      - uses: cachix/install-nix-action@v30
 
       - name: Check ${{ matrix.spec }}.tla
-        run: tlc ${{ matrix.spec }}.tla
+        run: nix run nixpkgs#tlaplus -- ${{ matrix.spec }}.tla
