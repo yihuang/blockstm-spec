@@ -49,16 +49,27 @@ RecordWrite(relations, w, keys) ==
     ]
 
 \* when a writer removes a key, e.g. a new incarnation doesn't write a key that was written before,
-\* remove the relationships that read the writer for the key.
+\* move readers that depended on this writer for the key to the previous writer that remains visible.
 RecordRemove(relations, w, keys) ==
     [ k \in Key |->
         IF k \notin keys
         THEN relations[k]
         ELSE
+            LET candidates == { wi \in WriterIndex :
+                                 /\ wi < w
+                                 /\ wi # 0
+                                 /\ k \in DOMAIN mem[wi] }
+                prevW == IF candidates = {}
+                         THEN 0
+                         ELSE CHOOSE wi \in candidates :
+                                  \A wj \in candidates : wi >= wj
+            IN
             [ w2 \in WriterIndex |->
                 IF w2 = w
                 THEN {}
-                ELSE relations[k][w2]
+                ELSE IF w2 = prevW
+                     THEN relations[k][w2] \union relations[k][w]
+                     ELSE relations[k][w2]
             ]
     ]
 
