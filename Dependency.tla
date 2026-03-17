@@ -1,4 +1,5 @@
----- MODULE Dependency ----
+------------------------------ MODULE Dependency -------------------------------
+
 EXTENDS Integers
 
 CONSTANTS Key, NoVal, Absent, BlockSize
@@ -15,7 +16,7 @@ VARIABLE rels \* relationships between read/write transactions
 \* Records that a reader read a key which is written by a writer.
 \* 0 means the initial version, Absent means the reader doesn't read the key.
 \* (reader_tx, key) -> writer_tx
-Relationship == [TxIndex \X Key -> TxIndex \cup {0, Absent}]
+Relationship == [TxIndex \X Key -> TxIndex \union {0, Absent}]
 
 TypeOK ==
     /\ TypeOKMem
@@ -26,39 +27,43 @@ TypeOK ==
 \* when writer writes a key, the relationships that cross the writer should be updated.
 RecordWrite(relations, w, keys) ==
     [ <<r, k>> \in TxIndex \X Key |->
-        LET w_cur == relations[<<r, k>>] IN
-        IF /\ w_cur /= Absent
-           /\ k \in keys
-           /\ r > w
-           /\ w_cur < w
-        THEN w
-        ELSE w_cur
+        LET w_cur == relations[<< r, k >>]
+        IN IF
+               /\ w_cur /= Absent
+               /\ k \in keys
+               /\ r > w
+               /\ w_cur < w
+           THEN w
+           ELSE w_cur
     ]
 
 \* when writer remove a key, e.g. a new incarnation doesn't write a key that's written before,
 \* remove the relationships that reads the writer for the key.
 RecordRemove(relations, w, keys) ==
     [ <<r, k>> \in TxIndex \X Key |->
-        LET w_cur == relations[<<r, k>>] IN
-        IF k \in keys /\ w_cur = w
-        THEN Absent
-        ELSE w_cur
+        LET w_cur == relations[<< r, k >>]
+        IN
+            IF k \in keys /\ w_cur = w
+            THEN Absent
+            ELSE w_cur
     ]
 
 Write(w, cs) ==
     /\ WriteMem(w, cs)
     /\ LET wrote == RecordWrite(rels, w, DOMAIN cs)
-          removed == RecordRemove(wrote, w, DOMAIN mem[w] \ DOMAIN cs) IN
-      rels' = removed
+          removed == RecordRemove(wrote, w, DOMAIN mem[w] \ DOMAIN cs)
+      IN
+          rels' = removed
 
 Read(r, k) ==
-    LET w == FindMem(k, r) IN
-    /\ rels' = [rels EXCEPT ![<<r, k>>] = w]
-    /\ UNCHANGED mem
+    LET w == FindMem(k, r)
+    IN
+        /\ rels' = [rels EXCEPT ![<< r, k >>] = w]
+        /\ UNCHANGED mem
 
 Init ==
     /\ InitMem
-    /\ rels = [<<r, k>> \in TxIndex \X Key |-> Absent]
+    /\ rels = [ <<r, k>> \in TxIndex \X Key |-> Absent]
 
 Next ==
     \/ \E w \in TxIndex:
@@ -77,7 +82,8 @@ Spec ==
 \* reader is always after the writer for all relationships, i.e. a reader always reads the previous version of a key.
 ReadPreviousVersion ==
     \A r \in TxIndex: \A k \in Key:
-        LET w == rels[<<r, k>>] IN
+        LET w == rels[<< r, k >>]
+        IN
             w = Absent \/ w < r
 
 (* A reader always reads the latest value before it,
@@ -86,29 +92,31 @@ ReadPreviousVersion ==
  *)
 NoWriteInBetween ==
     \A r \in TxIndex: \A k \in Key:
-        LET w == rels[<<r, k>>] IN
+        LET w == rels[<< r, k >>]
+        IN
             \/ w = Absent
             \/ \A txn \in (w + 1)..(r - 1):
-                  k \notin DOMAIN mem[txn]
-
-
+                k \notin DOMAIN mem[txn]
+        
 \* the writer performed an operation (write or delete) on the key for all relationships, i.e. the relationship is not spurious.
 ConsistentReads ==
     \A r \in TxIndex: \A k \in Key:
-        LET w == rels[<<r, k>>] IN
+        LET w == rels[<< r, k >>]
+        IN
             \/ w = Absent
             \/ w = 0
             \/ k \in DOMAIN mem[w]
-
+        
 \* all the readers that reads a writer are `<=` the next writer for the same key, i.e. the relationships do not overlap.
 RelationshipsDontOverlap ==
     \A r1, r2 \in TxIndex: \A k \in Key:
-        LET w1 == rels[<<r1, k>>]
-            w2 == rels[<<r2, k>>] IN
+        LET w1 == rels[<< r1, k >>]
+            w2 == rels[<< r2, k >>]
+        IN
             \/ w1 = Absent
             \/ w2 = Absent
             \/ w1 < w2 => r1 <= w2
 
 THEOREM NoWriteInBetween /\ ConsistentReads => RelationshipsDontOverlap
 
-====
+================================================================================
