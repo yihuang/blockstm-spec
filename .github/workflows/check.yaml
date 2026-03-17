@@ -20,4 +20,4 @@ jobs:
       - uses: cachix/install-nix-action@v30
 
       - name: Check ${{ matrix.spec }}.tla
-        run: nix run nixpkgs#tlaplus -- ${{ matrix.spec }}.tla
+        run: nix shell nixpkgs#tlaplus --command tlc ${{ matrix.spec }}.tla
