@@ -6,13 +6,15 @@ CONSTANTS Key, Val, NoVal, BlockSize
 
 ASSUME Val /= {}
 
-VARIABLE mem
+VARIABLES
+    mem,        \* multi-version memory
+    rels,       \* dependency relationships: key -> writer -> {readers}
+    execStatus, \* execution status of each transaction
+    incarnation \* incarnation number of each transaction
 
 Storage == [k \in Key |-> CHOOSE v \in Val : TRUE]
 
 INSTANCE Mem
-
-VARIABLE rels \* relationships between read/write transactions
 
 \* TxIndex extended with 0 to represent the initial version (writer 0 = storage).
 WriterIndex == TxIndex \union {0}
@@ -22,9 +24,15 @@ WriterIndex == TxIndex \union {0}
 \* writer_tx is 0 for the initial version.
 Relationship == [Key -> [WriterIndex -> SUBSET TxIndex]]
 
+ExecStatus == {"ReadyToExecute", "Executed"}
+
+vars == << mem, rels, execStatus, incarnation >>
+
 TypeOK ==
     /\ TypeOKMem
     /\ rels \in Relationship
+    /\ execStatus \in [TxIndex -> ExecStatus]
+    /\ incarnation \in [TxIndex -> Nat]
 
 \* Specification
 
@@ -73,41 +81,68 @@ RecordRemove(relations, w, keys) ==
             ]
     ]
 
-Write(w, cs) ==
-    /\ WriteMem(w, cs)
-    /\ LET wrote == RecordWrite(rels, w, DOMAIN cs)
-          removed == RecordRemove(wrote, w, DOMAIN mem[w] \ DOMAIN cs)
-      IN
-          rels' = removed
+\* Compute the set of readers whose dependency was removed:
+\* any reader that appears in some writer's set in old_rels but not in the same
+\* set in new_rels.  These readers must re-execute because a write has changed
+\* the version they depend on (push validation).
+InvalidatedReaders(old_rels, new_rels) ==
+    { r \in TxIndex :
+        \E k \in Key : \E w \in WriterIndex :
+            r \in old_rels[k][w] /\ r \notin new_rels[k][w] }
 
-Read(r, k) ==
-    LET w == FindMem(k, r)
-        prev == { w2 \in WriterIndex : r \in rels[k][w2] }
-    IN
-        /\ rels' = [ rels EXCEPT
-                ![k] = [ w2 \in WriterIndex |->
-                    IF w2 = w THEN rels[k][w2] \union {r}
-                    ELSE IF w2 \in prev THEN rels[k][w2] \ {r}
+\* Execute transaction txn atomically:
+\*   1. Record reads  – update rels so txn points to the nearest prior writer for
+\*                      every key, removing any stale entries from previous reads.
+\*   2. Record writes – apply RecordWrite then RecordRemove to propagate the new
+\*                      write to dependent readers.
+\*   3. Push validation – any reader whose dependency changed is immediately
+\*                        re-scheduled (execStatus -> ReadyToExecute) and its
+\*                        incarnation is incremented; txn itself moves to Executed.
+TxExecute(txn) ==
+    /\ execStatus[txn] = "ReadyToExecute"
+    /\ \E cs \in Overlay :
+        LET
+            \* Step 1: record reads for all keys
+            rels_reads == [k \in Key |->
+                LET w    == FindMem(k, txn)
+                    prev == { w2 \in WriterIndex : txn \in rels[k][w2] }
+                IN [ w2 \in WriterIndex |->
+                    IF w2 = w      THEN rels[k][w2] \union {txn}
+                    ELSE IF w2 \in prev THEN rels[k][w2] \ {txn}
                     ELSE rels[k][w2]
                 ]
             ]
-        /\ UNCHANGED mem
+            \* Step 2a: record newly written keys
+            rels_wrote == RecordWrite(rels_reads, txn, DOMAIN cs)
+            \* Step 2b: remove keys not written in this incarnation
+            rels_new   == RecordRemove(rels_wrote, txn, DOMAIN mem[txn] \ DOMAIN cs)
+            \* Step 3: readers displaced by the write
+            inv        == InvalidatedReaders(rels_reads, rels_new)
+        IN
+            /\ WriteMem(txn, cs)
+            /\ rels' = rels_new
+            /\ execStatus' = [i \in TxIndex |->
+                  IF i = txn   THEN "Executed"
+                  ELSE IF i \in inv THEN "ReadyToExecute"
+                  ELSE execStatus[i]]
+            /\ incarnation' = [i \in TxIndex |->
+                  IF i \in inv THEN incarnation[i] + 1
+                  ELSE incarnation[i]]
+
+AllExecuted == \A txn \in TxIndex : execStatus[txn] = "Executed"
 
 Init ==
     /\ InitMem
-    /\ rels = [ k \in Key |-> [w \in WriterIndex |-> {}] ]
+    /\ rels        = [ k \in Key |-> [w \in WriterIndex |-> {}] ]
+    /\ execStatus  = [i \in TxIndex |-> "ReadyToExecute"]
+    /\ incarnation = [i \in TxIndex |-> 0]
 
 Next ==
-    \/ \E w \in TxIndex:
-        \E cs \in Overlay:
-            Write(w, cs)
-
-    \/ \E r \in TxIndex:
-        \E k \in Key:
-            Read(r, k)
+    \/ AllExecuted /\ UNCHANGED vars
+    \/ \E txn \in TxIndex : TxExecute(txn)
 
 Spec ==
-    Init /\ [][Next]_<< mem, rels >>
+    Init /\ [][Next]_vars /\ WF_vars(Next)
 
 \* Properties
 
