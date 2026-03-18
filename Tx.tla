@@ -10,9 +10,7 @@ VARIABLE mem \* multi-version memory
 INSTANCE Mem WITH
     \* assume value starts at 0 and each tx increase the value at most by 1,
     \* so the value should never exceed BlockSize.
-    Val <- 0..BlockSize,
-    Storage <- Storage,
-    mem <- mem
+    Val <- 0..BlockSize
 
 ASSUME BlockSize > 0
 
