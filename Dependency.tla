@@ -81,10 +81,11 @@ RecordRemove(relations, w, keys) ==
             ]
     ]
 
-\* Compute the set of readers whose dependency was removed:
-\* any reader that appears in some writer's set in old_rels but not in the same
-\* set in new_rels.  These readers must re-execute because a write has changed
-\* the version they depend on (push validation).
+\* Compute the set of readers whose dependency pointer moved to a different writer:
+\* any reader r such that r was in old_rels[k][w] for some (k, w) but is no longer
+\* in new_rels[k][w] for that same (k, w).  This means r's dependency for key k was
+\* re-assigned to a newer writer, so r must re-execute to observe the correct version
+\* (push validation – the writer proactively notifies all affected readers).
 InvalidatedReaders(old_rels, new_rels) ==
     { r \in TxIndex :
         \E k \in Key : \E w \in WriterIndex :
