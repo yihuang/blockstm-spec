@@ -306,4 +306,28 @@ DepsOnlyForPending ==
 
 THEOREM NoWriteInBetween /\ ConsistentReads => RelationshipsDontOverlap
 
+\* Sequential execution state at step i: the result of applying mem[1], ..., mem[i]
+\* in order starting from Storage.  SeqStateAt[0] = Storage (before any transactions).
+SeqStateAt[i \in 0..BlockSize] ==
+    IF i = 0 THEN Storage
+    ELSE ApplyChanges(SeqStateAt[i - 1], mem[i])
+
+\* The set containing the final state reached by sequential execution — applying each
+\* transaction's write set in program order starting from Storage.
+SequentialExec == {SeqStateAt[BlockSize]}
+
+\* The set containing the final state visible from beyond the last transaction in the
+\* parallel multi-version execution.
+FinalExec == {ViewMem(BlockSize + 1)}
+
+\* When all transactions have been executed, the final parallel state equals the
+\* result of applying their write sets sequentially.  This is a TLC-checkable
+\* invariant form of FinalEqualsSequential below.
+FinalEqualsSequentialInv == AllExecuted => ViewMem(BlockSize + 1) = SeqStateAt[BlockSize]
+
+\* The final execution result of parallel multi-version execution equals the result
+\* of applying each transaction's write set in sequential program order.
+THEOREM FinalEqualsSequential ==
+    \A seqExec \in SequentialExec, finalExec \in FinalExec : seqExec = finalExec
+
 ================================================================================
