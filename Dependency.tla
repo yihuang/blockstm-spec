@@ -25,11 +25,11 @@ VARIABLES
                  \* biggest incarnation.
     deps        \* scheduling dependency: deps[r] = set of writers that have
                 \* push-invalidated txn r and whose current incarnation r must wait
-                \* for before re-executing.  Specifically, txn r can re-execute only
+                \* for before re-executing.  Specifically, txn r can only call TxBegin
                 \* when execStatus[w] = "Executed" for every w in deps[r], ensuring
                 \* that r reads from the LATEST writes of every writer that aborted it.
-                \* deps[r] is cleared to {} when r re-executes (its precondition
-                \* guarantees all writers are already Executed at that point).
+                \* deps[r] is cleared to {} when r calls TxBegin (which checks that
+                \* all deps are already Executed at that point).
                 \* If a writer w is itself re-aborted (set back to ReadyToExecute) after
                 \* invalidating r, then r stays blocked until w finishes its new run.
 
@@ -49,7 +49,7 @@ REntry == [r : TxIndex, incn : Nat]
 \* Type documentation (not used directly in TypeOK to avoid infinite-set issues with Nat).
 Relationship == [Key -> [WriterIndex -> SUBSET REntry]]
 
-ExecStatus == {"ReadyToExecute", "Executed"}
+ExecStatus == {"ReadyToExecute", "Executing", "Executed"}
 
 vars == << mem, rels, execStatus, incarnation, deps >>
 
@@ -118,13 +118,18 @@ RecordRemove(relations, w, keys) ==
 \* For each displaced reader r, find the MAXIMUM displaced incarnation max_n.  We abort r
 \* only when:
 \*   - incarnation[r] = max_n   — the displacement affects r's CURRENT run, and
-\*   - execStatus[r] = "Executed" — r has actually finished that run.
+\*   - execStatus[r] \in {"Executing", "Executed"} — r has registered its reads for that run.
+\*
+\* Both Executing and Executed readers have their reads registered in rels (via TxBegin) and
+\* can therefore be aborted by a concurrent write.  A ReadyToExecute reader has not started
+\* its current run yet and has no current-incarnation reads in rels; it is not aborted.
 \*
 \* Example: r5_incn1 resides under w1, r5_incn2 resides under w3.
 \*   - w2 displaces only r5_incn1  → max_n=1.  If incarnation[r5]=2, no abort (r5 already
 \*     re-executed past incarnation 1).
 \*   - w4 displaces both r5_incn1 and r5_incn2 → max_n=2.  If incarnation[r5]=2 and
-\*     execStatus[r5]="Executed", abort r5 (increment incarnation to 3, reschedule).
+\*     execStatus[r5] ∈ {"Executing", "Executed"}, abort r5 (increment incarnation to 3,
+\*     reschedule).
 \*
 \* If incarnation[r] > max_n: r has already re-executed to a newer incarnation; don't abort.
 \* If execStatus[r] = "ReadyToExecute": r is already pending re-execution; don't abort again.
@@ -137,52 +142,63 @@ InvalidatedReaders(old_rels, new_rels) ==
             \* CHOOSE is the idiomatic TLA+ way to express "max of a non-empty finite set".
             LET disp_incns == { e.incn : e \in { d \in displaced : d.r = r } }
                 max_n      == CHOOSE n \in disp_incns : \A m \in disp_incns : n >= m
-            IN  /\ execStatus[r] = "Executed"
+            IN  /\ execStatus[r] \in {"Executing", "Executed"}
                 /\ incarnation[r] = max_n }
 
-\* Execute transaction txn atomically:
-\*   1. Record reads  – lazily ADD a new [r: txn, incn: incarnation[txn]] entry for every
-\*                      key to the correct writer's set (FindMem).  Old entries from previous
-\*                      incarnations of txn are left in place: different incarnations of txn
-\*                      may read from different writers, so their entries coexist in rels.
-\*                      Write operations handle displacement and cleanup lazily.
-\*   2. Record writes – apply RecordWrite then RecordRemove to propagate the new write
-\*                      to dependent readers (moves REntry records, not plain reader ids).
-\*   3. Push validation – compute displaced entries, find max incarnation per reader,
-\*                        and abort only readers whose CURRENT incarnation was displaced
-\*                        (incarnation[r] = max_n) and who have finished that run (Executed).
-\*                        Aborted readers have ALL their rels entries removed (rels_clean),
-\*                        gain txn in deps[r], and are set back to ReadyToExecute with
-\*                        incarnation incremented.  ReadyToExecute readers are untouched.
-\* Precondition: all writers in deps[txn] must be Executed, guaranteeing that txn
-\* reads from the latest writes of every writer that previously aborted it.
-TxExecute(txn) ==
+\* Start executing transaction txn.  Transitions ReadyToExecute → Executing.
+\*   - Checks and clears scheduling deps: txn may not start until every writer that
+\*     previously push-aborted txn has finished its current incarnation (Executed).
+\*   - Eagerly registers txn's reads in rels by adding [r: txn, incn: incarnation[txn]]
+\*     under the nearest prior writer for every key.  This pre-registration is what
+\*     enables push validation to abort an in-progress execution (Executing state):
+\*     if a concurrent writer displaces one of these entries before TxExecute fires,
+\*     InvalidatedReaders detects the displacement and sets txn back to ReadyToExecute.
+TxBegin(txn) ==
     /\ execStatus[txn] = "ReadyToExecute"
     /\ \A w \in deps[txn] : execStatus[w] = "Executed"
+    /\ LET entry == [r |-> txn, incn |-> incarnation[txn]]
+           \* Rebuild rels by adding entry under FindMem(k, txn) for each key.
+           \* Full construction over all keys is standard TLA+ idiom for nested functions.
+       IN rels' = [k \in Key |->
+                      LET w == FindMem(k, txn)
+                      IN [ w2 \in WriterIndex |->
+                              IF w2 = w THEN rels[k][w2] \union {entry}
+                              ELSE rels[k][w2]
+                         ]
+                 ]
+    /\ execStatus' = [execStatus EXCEPT ![txn] = "Executing"]
+    /\ deps' = [deps EXCEPT ![txn] = {}]
+    /\ UNCHANGED << mem, incarnation >>
+
+\* Commit the execution of txn.  Transitions Executing → Executed.
+\* Reads were already registered in TxBegin (rels_reads == rels at this point).
+\* Here we apply the chosen write-set and run push validation:
+\*   1. Record writes — apply RecordWrite then RecordRemove to propagate the new write
+\*                      to dependent readers (moves REntry records).
+\*   2. Push validation — computes displaced entries; finds max incarnation per reader;
+\*                        aborts Executing and Executed readers whose CURRENT incarnation
+\*                        was displaced (incarnation[r] = max_n).  Aborted readers have
+\*                        ALL their rels entries removed (rels_clean), gain txn in
+\*                        deps[r], and are set back to ReadyToExecute with incarnation
+\*                        incremented.  ReadyToExecute readers are untouched.
+TxExecute(txn) ==
+    /\ execStatus[txn] = "Executing"
     /\ \E cs \in Overlay :
         LET
-            \* Step 1: lazily record reads – add new (txn, current incarnation) entry
-            \* to the appropriate writer's set; do NOT remove old incarnation entries.
-            rels_reads == [k \in Key |->
-                LET w     == FindMem(k, txn)
-                    entry == [r |-> txn, incn |-> incarnation[txn]]
-                IN [ w2 \in WriterIndex |->
-                    IF w2 = w THEN rels[k][w2] \union {entry}
-                    ELSE rels[k][w2]
-                ]
-            ]
-            \* Step 2a: record newly written keys
+            \* Reads were pre-registered by TxBegin; current rels IS the pre-read snapshot.
+            \* We keep the name rels_reads to make the three-step read→write→validate
+            \* pipeline explicit and consistent with RecordWrite/RecordRemove signatures.
+            rels_reads == rels
+            \* Step 1a: record newly written keys
             rels_wrote == RecordWrite(rels_reads, txn, DOMAIN cs)
-            \* Step 2b: remove keys not written in this incarnation
+            \* Step 1b: remove keys not written in this incarnation
             rels_new   == RecordRemove(rels_wrote, txn, DOMAIN mem[txn] \ DOMAIN cs)
-            \* Step 3: readers displaced by the write (uses max-incarnation rule)
+            \* Step 2: readers displaced by the write (uses max-incarnation rule).
+            \* Both Executing and Executed readers are eligible for abort.
             inv        == InvalidatedReaders(rels_reads, rels_new)
             \* Remove ALL rels entries for aborted readers (ALL incarnations), since
             \* those entries are now stale: the reader will re-execute at a higher
-            \* incarnation, and its new reads will create fresh entries.  This full
-            \* cleanup is in contrast to the lazy ADD in Step 1: laziness applies
-            \* during normal execution, but on abort we clear the slate so old
-            \* incarnation entries don't interfere with future displacement checks.
+            \* incarnation, and its new reads will create fresh entries in TxBegin.
             \* The scheduling obligation (re-execute only after deps are Executed)
             \* is captured in deps[r].
             rels_clean == [ k \in Key |->
@@ -198,11 +214,10 @@ TxExecute(txn) ==
             /\ incarnation' = [i \in TxIndex |->
                   IF i \in inv THEN incarnation[i] + 1
                   ELSE incarnation[i]]
-            \* txn clears its own deps on re-execution (precondition guarantees
-            \* they were all Executed); invalidated readers gain txn in their deps.
+            \* Aborted readers gain txn in their deps so they wait for txn's current
+            \* incarnation to finish before re-executing at the higher incarnation.
             /\ deps' = [i \in TxIndex |->
-                  IF i = txn  THEN {}
-                  ELSE IF i \in inv THEN deps[i] \union {txn}
+                  IF i \in inv THEN deps[i] \union {txn}
                   ELSE deps[i]]
 
 AllExecuted == \A txn \in TxIndex : execStatus[txn] = "Executed"
@@ -216,6 +231,17 @@ IncarnationMonotone ==
 \* the stutter transition, so the state remains AllExecuted forever.
 EventuallyAllExecuted == <>[]AllExecuted
 
+\* Liveness: every Executing transaction eventually leaves that state — either it
+\* finishes (Executing → Executed via TxExecute) or gets push-aborted by a concurrent
+\* writer (Executing → ReadyToExecute via InvalidatedReaders in another TxExecute).
+\* Together with EventuallyAllExecuted, this ensures no transaction is stuck forever in
+\* a non-terminal state, i.e. the abortion logic is complete: every transaction in a
+\* dirty/in-progress state will eventually be detected, aborted if needed, and
+\* re-executed with fresh reads until it stabilises at Executed.
+AbortCompleteness ==
+    \A r \in TxIndex :
+        (execStatus[r] = "Executing") ~> (execStatus[r] /= "Executing")
+
 Init ==
     /\ InitMem
     /\ rels        = [ k \in Key |-> [w \in WriterIndex |-> {}] ]
@@ -225,6 +251,7 @@ Init ==
 
 Next ==
     \/ AllExecuted /\ UNCHANGED vars
+    \/ \E txn \in TxIndex : TxBegin(txn)
     \/ \E txn \in TxIndex : TxExecute(txn)
 
 Spec ==
@@ -270,8 +297,10 @@ UniqueReaderIncarnations ==
 DepsAcyclic ==
     \A r \in TxIndex : \A w \in deps[r] : w < r
 
-\* deps[r] is non-empty only while r is still pending re-execution.
-\* Once r re-executes (becomes Executed) its deps are cleared to {}.
+\* deps[r] is non-empty only while r is still pending re-execution (ReadyToExecute).
+\* TxBegin clears deps[r] when r starts executing (transitions to Executing), after
+\* verifying that all scheduling dependencies are satisfied.  While r is Executing
+\* or Executed, deps[r] = {}.
 DepsOnlyForPending ==
     \A r \in TxIndex : deps[r] /= {} => execStatus[r] = "ReadyToExecute"
 
