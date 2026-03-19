@@ -8,10 +8,13 @@ ASSUME Val /= {}
 
 VARIABLES
     mem,        \* multi-version memory
-    rels,       \* dependency relationships: key -> writer -> {readers}
-                \* ONLY contains entries for currently-Executed transactions whose
-                \* reads are still valid.  Stale entries are removed immediately
-                \* when a reader is push-invalidated, so invariants hold at all times.
+    rels,       \* dependency relationships: key -> writer -> {[r: reader_tx, incn: incarnation]}
+                \* Each entry records WHICH incarnation of a reader read from which writer.
+                \* Multiple incarnations of the same transaction may coexist in rels under
+                \* different writers (e.g., r5_1 under w1 and r5_2 under w3 for the same key).
+                \* Read operations lazily ADD a new (r, incn) entry without removing old ones.
+                \* Write operations handle displacement: they move ALL incarnation entries for
+                \* affected readers and use the maximum displaced incarnation to decide aborts.
     execStatus, \* execution status of each transaction
     incarnation, \* incarnation number: monotonically increasing counter tracking
                  \* distinct "runs" of a transaction; a higher value means a newer
@@ -37,10 +40,14 @@ INSTANCE Mem
 \* TxIndex extended with 0 to represent the initial version (writer 0 = storage).
 WriterIndex == TxIndex \union {0}
 
-\* Records which readers read a given key from a given writer.
-\* key -> writer_tx -> { reader_tx }
-\* writer_tx is 0 for the initial version.
-Relationship == [Key -> [WriterIndex -> SUBSET TxIndex]]
+\* Read-entry record: which reader, at which incarnation, read from a given writer.
+\* rels[k][w] is a set of such records.  The same reader r may appear with different
+\* incarnation values (under the same or different writers for the same key) because
+\* successive re-executions may resolve FindMem to different writers.
+REntry == [r : TxIndex, incn : Nat]
+
+\* Type documentation (not used directly in TypeOK to avoid infinite-set issues with Nat).
+Relationship == [Key -> [WriterIndex -> SUBSET REntry]]
 
 ExecStatus == {"ReadyToExecute", "Executed"}
 
@@ -48,7 +55,10 @@ vars == << mem, rels, execStatus, incarnation, deps >>
 
 TypeOK ==
     /\ TypeOKMem
-    /\ rels \in Relationship
+    /\ \A k \in Key : \A w \in WriterIndex : \A e \in rels[k][w] :
+        /\ e.r \in TxIndex
+        /\ e.incn \in Nat
+        /\ e.incn <= incarnation[e.r]   \* entries never exceed current incarnation
     /\ execStatus \in [TxIndex -> ExecStatus]
     /\ incarnation \in [TxIndex -> Nat]
     /\ deps \in [TxIndex -> SUBSET TxIndex]
@@ -57,16 +67,16 @@ TypeOK ==
 
 \* when a writer writes a key, readers that previously read from an older writer
 \* for the same key are updated to point to the new writer.
+\* "movers" are REntry records (r, incn) where r > w and the entry currently resides
+\* under some writer < w.  ALL incarnation entries for such readers are moved together.
 RecordWrite(relations, w, keys) ==
     [ k \in Key |->
         IF k \notin keys
         THEN relations[k]
         ELSE
-            LET movers == { r \in TxIndex :
-                    /\ r > w
-                    /\ \E w_cur \in WriterIndex :
-                        /\ w_cur < w
-                        /\ r \in relations[k][w_cur] }
+            LET prev_writers == { wi \in WriterIndex : wi < w }
+                movers       == { e \in UNION { relations[k][wi] : wi \in prev_writers } :
+                                      e.r > w }
             IN
             [ w2 \in WriterIndex |->
                 IF w2 = w
@@ -100,38 +110,50 @@ RecordRemove(relations, w, keys) ==
             ]
     ]
 
-\* Compute the set of readers whose dependency pointer moved to a different writer
-\* AND whose rels entry corresponds to the CURRENT (biggest) incarnation, i.e.
-\* execStatus[r] = "Executed".
+\* Compute the set of readers to abort after a write.
 \*
-\* A writer must only abort transactions that have COMPLETED execution at their
-\* current incarnation.  If a reader is already ReadyToExecute — either awaiting
-\* its first run or already re-scheduled to a higher incarnation by a prior write —
-\* its rels entry is speculative/stale and must not trigger another abort.  This
-\* ensures the writer aborts exactly the biggest incarnation and never re-aborts
-\* an ongoing (higher-incarnation) re-execution.
+\* A read entry e = [r, incn] is "displaced" when it was under some writer w in old_rels
+\* but is no longer there in new_rels (RecordWrite moved it to the new writer).
+\*
+\* For each displaced reader r, find the MAXIMUM displaced incarnation max_n.  We abort r
+\* only when:
+\*   - incarnation[r] = max_n   — the displacement affects r's CURRENT run, and
+\*   - execStatus[r] = "Executed" — r has actually finished that run.
+\*
+\* Example: r5_incn1 resides under w1, r5_incn2 resides under w3.
+\*   - w2 displaces only r5_incn1  → max_n=1.  If incarnation[r5]=2, no abort (r5 already
+\*     re-executed past incarnation 1).
+\*   - w4 displaces both r5_incn1 and r5_incn2 → max_n=2.  If incarnation[r5]=2 and
+\*     execStatus[r5]="Executed", abort r5 (increment incarnation to 3, reschedule).
+\*
+\* If incarnation[r] > max_n: r has already re-executed to a newer incarnation; don't abort.
+\* If execStatus[r] = "ReadyToExecute": r is already pending re-execution; don't abort again.
 InvalidatedReaders(old_rels, new_rels) ==
-    { r \in TxIndex :
-        /\ execStatus[r] = "Executed"
-        /\ \E k \in Key : \E w \in WriterIndex :
-            r \in old_rels[k][w] /\ r \notin new_rels[k][w] }
+    LET displaced == UNION { { e \in old_rels[k][w] : e \notin new_rels[k][w] }
+                             : k \in Key, w \in WriterIndex }
+    IN { r \in { e.r : e \in displaced } :
+            \* disp_incns is non-empty: r was selected because it appears in displaced,
+            \* so there is at least one entry with r.r = r.
+            \* CHOOSE is the idiomatic TLA+ way to express "max of a non-empty finite set".
+            LET disp_incns == { e.incn : e \in { d \in displaced : d.r = r } }
+                max_n      == CHOOSE n \in disp_incns : \A m \in disp_incns : n >= m
+            IN  /\ execStatus[r] = "Executed"
+                /\ incarnation[r] = max_n }
 
 \* Execute transaction txn atomically:
-\*   1. Record reads  – update rels so txn points to the nearest prior writer for
-\*                      every key, removing any stale entries from previous incarnations.
-\*                      Different incarnations of the same txn may read different
-\*                      versions of the same key.
-\*   2. Record writes – apply RecordWrite then RecordRemove to propagate the new
-\*                      write to dependent readers.
-\*   3. Push validation – only Executed readers whose dependency changed are
-\*                        push-invalidated: their stale rels entries are REMOVED
-\*                        entirely (rels stays clean, invariants intact), their
-\*                        scheduling dependency deps[r] gains txn (so r waits for
-\*                        txn's current incarnation before re-executing), execStatus
-\*                        is set back to ReadyToExecute, and incarnation incremented.
-\*                        ReadyToExecute readers are left untouched: they have
-\*                        already been re-scheduled to a bigger incarnation and must
-\*                        not be aborted again.
+\*   1. Record reads  – lazily ADD a new [r: txn, incn: incarnation[txn]] entry for every
+\*                      key to the correct writer's set (FindMem).  Old entries from previous
+\*                      incarnations of txn are left in place: different incarnations of txn
+\*                      may read from different writers, so their entries coexist in rels.
+\*                      Write operations handle displacement and cleanup lazily.
+\*   2. Record writes – apply RecordWrite then RecordRemove to propagate the new write
+\*                      to dependent readers (moves REntry records, not plain reader ids).
+\*   3. Push validation – compute displaced entries, find max incarnation per reader,
+\*                        and abort only readers whose CURRENT incarnation was displaced
+\*                        (incarnation[r] = max_n) and who have finished that run (Executed).
+\*                        Aborted readers have ALL their rels entries removed (rels_clean),
+\*                        gain txn in deps[r], and are set back to ReadyToExecute with
+\*                        incarnation incremented.  ReadyToExecute readers are untouched.
 \* Precondition: all writers in deps[txn] must be Executed, guaranteeing that txn
 \* reads from the latest writes of every writer that previously aborted it.
 TxExecute(txn) ==
@@ -139,13 +161,13 @@ TxExecute(txn) ==
     /\ \A w \in deps[txn] : execStatus[w] = "Executed"
     /\ \E cs \in Overlay :
         LET
-            \* Step 1: record reads for all keys
+            \* Step 1: lazily record reads – add new (txn, current incarnation) entry
+            \* to the appropriate writer's set; do NOT remove old incarnation entries.
             rels_reads == [k \in Key |->
-                LET w    == FindMem(k, txn)
-                    prev == { w2 \in WriterIndex : txn \in rels[k][w2] }
+                LET w     == FindMem(k, txn)
+                    entry == [r |-> txn, incn |-> incarnation[txn]]
                 IN [ w2 \in WriterIndex |->
-                    IF w2 = w      THEN rels[k][w2] \union {txn}
-                    ELSE IF w2 \in prev THEN rels[k][w2] \ {txn}
+                    IF w2 = w THEN rels[k][w2] \union {entry}
                     ELSE rels[k][w2]
                 ]
             ]
@@ -153,14 +175,19 @@ TxExecute(txn) ==
             rels_wrote == RecordWrite(rels_reads, txn, DOMAIN cs)
             \* Step 2b: remove keys not written in this incarnation
             rels_new   == RecordRemove(rels_wrote, txn, DOMAIN mem[txn] \ DOMAIN cs)
-            \* Step 3: readers displaced by the write
+            \* Step 3: readers displaced by the write (uses max-incarnation rule)
             inv        == InvalidatedReaders(rels_reads, rels_new)
-            \* Remove ALL stale rels entries for invalidated readers so that rels
-            \* only ever contains entries for currently-valid (Executed) reads.
-            \* The scheduling obligation is moved to deps instead.
+            \* Remove ALL rels entries for aborted readers (ALL incarnations), since
+            \* those entries are now stale: the reader will re-execute at a higher
+            \* incarnation, and its new reads will create fresh entries.  This full
+            \* cleanup is in contrast to the lazy ADD in Step 1: laziness applies
+            \* during normal execution, but on abort we clear the slate so old
+            \* incarnation entries don't interfere with future displacement checks.
+            \* The scheduling obligation (re-execute only after deps are Executed)
+            \* is captured in deps[r].
             rels_clean == [ k \in Key |->
                 [ w \in WriterIndex |->
-                    rels_new[k][w] \ inv ] ]
+                    { e \in rels_new[k][w] : e.r \notin inv } ] ]
         IN
             /\ WriteMem(txn, cs)
             /\ rels' = rels_clean
@@ -207,16 +234,16 @@ Spec ==
 
 \* reader is always after the writer for all relationships, i.e. a reader always reads the previous version of a key.
 ReadPreviousVersion ==
-    \A k \in Key: \A w \in WriterIndex: \A r \in rels[k][w]:
-        w < r
+    \A k \in Key: \A w \in WriterIndex: \A e \in rels[k][w]:
+        w < e.r
 
 (* A reader always reads the latest value before it,
  * aka. there is no writes between a reader and a writer,
  * for all relationships, for all txn in (w, r), mem[txn] does not contain the key.
  *)
 NoWriteInBetween ==
-    \A k \in Key: \A w \in WriterIndex: \A r \in rels[k][w]:
-        \A txn \in (w + 1)..(r - 1):
+    \A k \in Key: \A w \in WriterIndex: \A e \in rels[k][w]:
+        \A txn \in (w + 1)..(e.r - 1):
             k \notin DOMAIN mem[txn]
 
 \* the writer performed an operation (write or delete) on the key for all relationships, i.e. the relationship is not spurious.
@@ -226,18 +253,20 @@ ConsistentReads ==
 
 \* all the readers that read a writer are <= the next writer for the same key, i.e. the relationships do not overlap.
 RelationshipsDontOverlap ==
-    \A k \in Key: \A w1, w2 \in WriterIndex: \A r1 \in rels[k][w1]: \A r2 \in rels[k][w2]:
-        w1 < w2 => r1 <= w2
+    \A k \in Key: \A w1, w2 \in WriterIndex: \A e1 \in rels[k][w1]: \A e2 \in rels[k][w2]:
+        w1 < w2 => e1.r <= w2
 
-\* each reader reads from at most one writer per key, i.e. readers are unique under the same key.
-UniqueReaders ==
-    \A k \in Key: \A r \in TxIndex: \A w1, w2 \in WriterIndex:
-        r \in rels[k][w1] /\ r \in rels[k][w2] => w1 = w2
+\* each (reader, incarnation) pair reads from at most one writer per key.
+\* Different incarnations of the same reader may read from different writers (lazy cleanup),
+\* so uniqueness is per (reader, incarnation) pair — not per reader alone.
+UniqueReaderIncarnations ==
+    \A k \in Key: \A w1, w2 \in WriterIndex: \A e \in rels[k][w1]:
+        e \in rels[k][w2] => w1 = w2
 
 \* deps[r] only contains writers with a strictly smaller transaction index than r.
-\* Because RecordWrite only moves readers with index > writer, every writer that can
-\* push-invalidate r has index < r.  This guarantees the deps graph is acyclic, so
-\* the system can never deadlock waiting for scheduling dependencies.
+\* Because RecordWrite only moves REntry records whose e.r > writer, every writer
+\* that can push-invalidate r has index < r.  This guarantees the deps graph is
+\* acyclic, so the system can never deadlock waiting for scheduling dependencies.
 DepsAcyclic ==
     \A r \in TxIndex : \A w \in deps[r] : w < r
 
