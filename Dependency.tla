@@ -342,13 +342,6 @@ SeqStateAt[i \in 0..BlockSize] ==
     IF i = 0 THEN Storage
     ELSE ApplyTxAt(i, SeqStateAt[i - 1])
 
-\* The set containing the final state reached by sequential execution.
-SequentialExec == {SeqStateAt[BlockSize]}
-
-\* The set containing the final state visible from beyond the last transaction in the
-\* parallel multi-version execution.
-FinalExec == {ViewMem(BlockSize + 1)}
-
 \* When all transactions have been executed, the view seen after every transaction txn
 \* must equal the sequential state produced by transactions 1..txn.  This is the
 \* TLC-checkable form of FinalEqualsSequential below.  It checks every prefix, not
@@ -359,6 +352,6 @@ FinalEqualsSequentialInv ==
 \* The final execution result of parallel multi-version execution equals the result
 \* of applying each transaction's write set in sequential program order.
 THEOREM FinalEqualsSequential ==
-    \A seqExec \in SequentialExec, finalExec \in FinalExec : seqExec = finalExec
+    ViewMem(BlockSize + 1) = SeqStateAt[BlockSize]
 
 ================================================================================
