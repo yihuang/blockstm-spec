@@ -5,6 +5,7 @@ EXTENDS Integers
 CONSTANTS Key, Val, NoVal, BlockSize
 
 ASSUME Val /= {}
+ASSUME BlockSize > 0
 
 VARIABLES
     mem,        \* multi-version memory
@@ -33,9 +34,21 @@ VARIABLES
                 \* If a writer w is itself re-aborted (set back to ReadyToExecute) after
                 \* invalidating r, then r stays blocked until w finishes its new run.
 
-Storage == [k \in Key |-> CHOOSE v \in Val : TRUE]
+Storage == [k \in Key |-> 0]
 
 INSTANCE Mem
+
+\* Deterministic transaction function: each transaction increments every key it reads.
+\* Modeling inter-transaction data dependencies requires a fixed function from read-set
+\* to write-set.  Without it, transactions could write arbitrary values and the
+\* sequential-equivalence property would be vacuously true (nothing constrains what
+\* "sequential execution" should produce).
+\* Value bound: Storage starts at 0; with BlockSize transactions each adding 1, the
+\* maximum value written is BlockSize, which stays within Val = 0..BlockSize.
+Tx(reads) == [k \in Key |-> reads[k] + 1]
+
+\* Apply Tx once to a storage state, producing the next sequential state.
+ApplyTx(st) == ApplyChanges(st, Tx(st))
 
 \* TxIndex extended with 0 to represent the initial version (writer 0 = storage).
 WriterIndex == TxIndex \union {0}
@@ -183,8 +196,9 @@ TxBegin(txn) ==
 \*                        incremented.  ReadyToExecute readers are untouched.
 TxExecute(txn) ==
     /\ execStatus[txn] = "Executing"
-    /\ \E cs \in Overlay :
-        LET
+    /\ LET
+            \* Deterministic write-set: always Tx applied to the current read view.
+            cs         == Tx(ViewMem(txn))
             \* Reads were pre-registered by TxBegin; current rels IS the pre-read snapshot.
             \* We keep the name rels_reads to make the three-step read→write→validate
             \* pipeline explicit and consistent with RecordWrite/RecordRemove signatures.
@@ -204,7 +218,7 @@ TxExecute(txn) ==
             rels_clean == [ k \in Key |->
                 [ w \in WriterIndex |->
                     { e \in rels_new[k][w] : e.r \notin inv } ] ]
-        IN
+       IN
             /\ WriteMem(txn, cs)
             /\ rels' = rels_clean
             /\ execStatus' = [i \in TxIndex |->
@@ -306,24 +320,27 @@ DepsOnlyForPending ==
 
 THEOREM NoWriteInBetween /\ ConsistentReads => RelationshipsDontOverlap
 
-\* Sequential execution state at step i: the result of applying mem[1], ..., mem[i]
-\* in order starting from Storage.  SeqStateAt[0] = Storage (before any transactions).
+\* Sequential execution state at step i: apply Tx iteratively starting from Storage,
+\* without any reference to mem.  This gives the ground-truth result of running
+\* transactions 1..i in program order, each reading from the output of the previous
+\* transaction.  SeqStateAt[0] = Storage (base case, no transactions applied yet).
 SeqStateAt[i \in 0..BlockSize] ==
     IF i = 0 THEN Storage
-    ELSE ApplyChanges(SeqStateAt[i - 1], mem[i])
+    ELSE ApplyTx(SeqStateAt[i - 1])
 
-\* The set containing the final state reached by sequential execution — applying each
-\* transaction's write set in program order starting from Storage.
+\* The set containing the final state reached by sequential execution.
 SequentialExec == {SeqStateAt[BlockSize]}
 
 \* The set containing the final state visible from beyond the last transaction in the
 \* parallel multi-version execution.
 FinalExec == {ViewMem(BlockSize + 1)}
 
-\* When all transactions have been executed, the final parallel state equals the
-\* result of applying their write sets sequentially.  This is a TLC-checkable
-\* invariant form of FinalEqualsSequential below.
-FinalEqualsSequentialInv == AllExecuted => ViewMem(BlockSize + 1) = SeqStateAt[BlockSize]
+\* When all transactions have been executed, the view seen after every transaction txn
+\* must equal the sequential state produced by transactions 1..txn.  This is the
+\* TLC-checkable form of FinalEqualsSequential below.  It checks every prefix, not
+\* just the final result, so it catches any intermediate inconsistency.
+FinalEqualsSequentialInv ==
+    AllExecuted => \A txn \in TxIndex : ViewMem(txn + 1) = SeqStateAt[txn]
 
 \* The final execution result of parallel multi-version execution equals the result
 \* of applying each transaction's write set in sequential program order.
