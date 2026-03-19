@@ -33,11 +33,11 @@ VARIABLES
                 \* all deps are already Executed at that point).
                 \* If a writer w is itself re-aborted (set back to ReadyToExecute) after
                 \* invalidating r, then r stays blocked until w finishes its new run.
-    txKeys      \* txKeys[i] = non-empty subset of Key that transaction i reads and writes.
+    txKeys      \* txKeys[i] = subset of Key that transaction i reads and writes (may be empty).
                 \* Chosen non-deterministically at Init and fixed for the whole execution,
                 \* giving each transaction its own access pattern and producing diverse
                 \* inter-transaction dependency graphs (some transactions share keys,
-                \* others are independent).
+                \* others are independent, and some may touch no keys at all).
 
 Storage == [k \in Key |-> 0]
 
@@ -45,17 +45,13 @@ INSTANCE Mem
 
 \* Transaction write function: txn increments exactly the keys in txKeys[txn].
 \* Using a per-transaction key subset creates varied access patterns and diverse
-\* inter-transaction dependency graphs (overlapping, non-overlapping, and partial).
+\* inter-transaction dependency graphs (overlapping, non-overlapping, partial, or empty).
 \* Value bound: Storage starts at 0; each key is incremented by at most one
 \* transaction per sequential step, so values stay within Val = 0..BlockSize.
 TxWrite(txn, reads) == [k \in txKeys[txn] |-> reads[k] + 1]
 
 \* Apply transaction txn to a storage state.
 ApplyTxAt(txn, st) == ApplyChanges(st, TxWrite(txn, st))
-
-\* The set of all non-empty subsets of Key.  Used to constrain txKeys so that
-\* every transaction accesses at least one key.
-NonEmptyKeySubsets == {ks \in SUBSET Key : ks /= {}}
 
 \* TxIndex extended with 0 to represent the initial version (writer 0 = storage).
 WriterIndex == TxIndex \union {0}
@@ -82,7 +78,7 @@ TypeOK ==
     /\ execStatus \in [TxIndex -> ExecStatus]
     /\ incarnation \in [TxIndex -> Nat]
     /\ deps \in [TxIndex -> SUBSET TxIndex]
-    /\ txKeys \in [TxIndex -> NonEmptyKeySubsets]   \* every transaction touches at least one key
+    /\ txKeys \in [TxIndex -> SUBSET Key]
 
 \* Specification
 
@@ -272,7 +268,7 @@ AbortCompleteness ==
 
 Init ==
     /\ InitMem
-    /\ txKeys      \in [TxIndex -> NonEmptyKeySubsets]
+    /\ txKeys      \in [TxIndex -> SUBSET Key]
     /\ rels        = [ k \in Key |-> [w \in WriterIndex |-> {}] ]
     /\ execStatus  = [i \in TxIndex |-> "ReadyToExecute"]
     /\ incarnation = [i \in TxIndex |-> 0]
