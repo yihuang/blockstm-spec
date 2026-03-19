@@ -10,7 +10,13 @@ VARIABLES
     mem,        \* multi-version memory
     rels,       \* dependency relationships: key -> writer -> {readers}
     execStatus, \* execution status of each transaction
-    incarnation \* incarnation number of each transaction
+    incarnation \* incarnation number: monotonically increasing counter tracking
+                \* distinct "runs" of a transaction; a higher value means a newer
+                \* run, and different incarnations may read different versions of
+                \* the same key.  When a transaction is aborted its incarnation is
+                \* incremented and it transitions to ReadyToExecute for re-execution
+                \* at the new (higher) incarnation.  The CURRENT run is always the
+                \* biggest incarnation.
 
 Storage == [k \in Key |-> CHOOSE v \in Val : TRUE]
 
@@ -81,24 +87,35 @@ RecordRemove(relations, w, keys) ==
             ]
     ]
 
-\* Compute the set of readers whose dependency pointer moved to a different writer:
-\* any reader r such that r was in old_rels[k][w] for some (k, w) but is no longer
-\* in new_rels[k][w] for that same (k, w).  This means r's dependency for key k was
-\* re-assigned to a newer writer, so r must re-execute to observe the correct version
-\* (push validation – the writer proactively notifies all affected readers).
+\* Compute the set of readers whose dependency pointer moved to a different writer
+\* AND whose rels entry corresponds to the CURRENT (biggest) incarnation, i.e.
+\* execStatus[r] = "Executed".
+\*
+\* A writer must only abort transactions that have COMPLETED execution at their
+\* current incarnation.  If a reader is already ReadyToExecute — either awaiting
+\* its first run or already re-scheduled to a higher incarnation by a prior write —
+\* its rels entry is speculative/stale and must not trigger another abort.  This
+\* ensures the writer aborts exactly the biggest incarnation and never re-aborts
+\* an ongoing (higher-incarnation) re-execution.
 InvalidatedReaders(old_rels, new_rels) ==
     { r \in TxIndex :
-        \E k \in Key : \E w \in WriterIndex :
+        /\ execStatus[r] = "Executed"
+        /\ \E k \in Key : \E w \in WriterIndex :
             r \in old_rels[k][w] /\ r \notin new_rels[k][w] }
 
 \* Execute transaction txn atomically:
 \*   1. Record reads  – update rels so txn points to the nearest prior writer for
-\*                      every key, removing any stale entries from previous reads.
+\*                      every key, removing any stale entries from previous incarnations.
+\*                      Different incarnations of the same txn may read different
+\*                      versions of the same key.
 \*   2. Record writes – apply RecordWrite then RecordRemove to propagate the new
 \*                      write to dependent readers.
-\*   3. Push validation – any reader whose dependency changed is immediately
-\*                        re-scheduled (execStatus -> ReadyToExecute) and its
-\*                        incarnation is incremented; txn itself moves to Executed.
+\*   3. Push validation – only Executed readers whose dependency changed are
+\*                        re-scheduled (execStatus -> ReadyToExecute) and their
+\*                        incarnation is incremented (marking a new, higher run).
+\*                        ReadyToExecute readers are left untouched: they have
+\*                        already been re-scheduled to a bigger incarnation and must
+\*                        not be aborted again.
 TxExecute(txn) ==
     /\ execStatus[txn] = "ReadyToExecute"
     /\ \E cs \in Overlay :
@@ -131,6 +148,15 @@ TxExecute(txn) ==
                   ELSE incarnation[i]]
 
 AllExecuted == \A txn \in TxIndex : execStatus[txn] = "Executed"
+
+\* incarnation is strictly non-decreasing: each abort increments it, never rolls back.
+IncarnationMonotone ==
+    [][\A txn \in TxIndex : incarnation[txn] <= incarnation'[txn]]_vars
+
+\* Liveness: eventually all transactions have completed their execution and the
+\* system has stabilised.  Once AllExecuted is reached the only enabled step is
+\* the stutter transition, so the state remains AllExecuted forever.
+EventuallyAllExecuted == <>[]AllExecuted
 
 Init ==
     /\ InitMem
