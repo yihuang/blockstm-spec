@@ -8,13 +8,11 @@ Storage == [k \in Key |-> 0]
 VARIABLE mem \* multi-version memory
 
 INSTANCE Mem WITH
-    \* assume value starts at 0 and each tx increase the value at most by 1,
-    \* so the value should never exceed BlockSize.
-    Val <- 0..BlockSize
+    \* values start at 0; each write adds 1 plus the sum of its dependency values,
+    \* so values are bounded by BlockSize * BlockSize.
+    Val <- 0..(BlockSize * BlockSize)
 
 ASSUME BlockSize > 0
-
-Storage == [k \in Key |-> 0]
 
 (* All possible transactions:
    - reads  : subset of Keys
@@ -56,8 +54,10 @@ Sum(S, st) ==
     ELSE LET x == CHOOSE x \in S : TRUE
          IN st[x] + Sum(S \ {x}, st)
 
-\* compute the write values of a transaction based on its dependencies and the current state
-TxWriteSet(tx, st) == [k \in tx.writes |-> Sum(tx.deps[k], st)]
+\* compute the write values of a transaction based on its dependencies and the current state;
+\* +1 ensures each write is strictly greater than 0, breaking the all-zeros fixed point and
+\* allowing validation conflicts to arise during parallel execution.
+TxWriteSet(tx, st) == [k \in tx.writes |-> Sum(tx.deps[k], st) + 1]
 
 \* execute tx logic
 ExecuteTx(txn) ==
