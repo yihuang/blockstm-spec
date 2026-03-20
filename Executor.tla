@@ -6,6 +6,7 @@ CONSTANTS Key, NoVal, BlockSize, Executors, NoTask
 ASSUME Executors # {}
 
 VARIABLES
+    block, \* the block of transactions
     mem, \* multi-version memory
     execStatus, \* execution status of transactions
     incarnation, \* incarnation numbers of transactions
@@ -28,7 +29,7 @@ VARIABLES
     \* tx validation status
     tx_validated_wave \* the biggest wave number when each transaction was validated succesfully
 
-txVars == << mem, execStatus, incarnation, readSet >>
+txVars == << block, mem, execStatus, incarnation, readSet >>
 vars == << txVars, execution_idx, validation_idx, commit_idx, active_tasks, validation_wave, tasks, terminated, tx_validated_wave >>
 
 Task == [
