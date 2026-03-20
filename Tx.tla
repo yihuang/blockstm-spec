@@ -3,6 +3,10 @@ EXTENDS Sequences, Integers, TLC
 
 CONSTANTS Key, NoVal, BlockSize
 
+Storage == [k \in Key |-> 0]
+
+VARIABLE mem \* multi-version memory
+
 INSTANCE Mem WITH
     \* assume value starts at 0 and each tx increase the value at most by 1,
     \* so the value should never exceed BlockSize.
@@ -27,7 +31,6 @@ Blocks == [ 1..BlockSize -> Transactions ]
 
 VARIABLES
     block, \* the block of transactions
-    mem, \* multi-version memory
     execStatus, \* execution status of transactions
     incarnation, \* incarnation numbers of transactions
     readSet \* the read set of transactions, used for validation
@@ -41,7 +44,7 @@ ExecStatus == {
 
 TypeOK ==
     /\ block \in Blocks
-    /\ TypeOKMem(mem)
+    /\ TypeOKMem
     /\ execStatus \in [TxIndex -> ExecStatus]
     /\ incarnation \in [TxIndex -> Nat]
     /\ readSet \in [TxIndex -> Overlay]
@@ -59,14 +62,14 @@ TxWriteSet(tx, st) == [k \in tx.writes |-> Sum(tx.deps[k], st)]
 \* execute tx logic
 ExecuteTx(txn) ==
     LET tx == block[txn]
-        state == ViewMem(mem, Storage, txn)
+        state == ViewMem(txn)
         reads == [k \in tx.reads |-> state[k]]
         writes == TxWriteSet(tx, state)
     IN
-        /\ mem' = WriteMem(mem, txn, writes)
+        /\ WriteMem(txn, writes)
         /\ readSet' = [readSet EXCEPT ![txn] = reads]
 
-ValidateTx(txn) == ViewMem(mem, Storage, txn) = readSet[txn]
+ValidateTx(txn) == ViewMem(txn) = readSet[txn]
 
 TxExecute(txn) ==
     /\ execStatus[txn] = "ReadyToExecute"
@@ -106,7 +109,7 @@ CommittedTxn == CHOOSE txn \in 0..BlockSize:
     /\ txn = BlockSize \/ ~Committed[txn + 1]
 
 \* compare the state of a transaction against the sequential execution state.
-ConsistentState(txn) == ViewMem(mem, Storage, txn+1) = SeqStates[txn]
+ConsistentState(txn) == ViewMem(txn + 1) = SeqStates[txn]
 
 \* all txs are committed eventually
 EventuallyCommitted == <>[]Committed[BlockSize]
@@ -125,7 +128,7 @@ Properties ==
 
 Init ==
     /\ block \in Blocks
-    /\ mem = EmptyMem
+    /\ InitMem
     /\ execStatus = [i \in TxIndex |-> "ReadyToExecute"]
     /\ incarnation = [i \in TxIndex |-> 0]
     /\ readSet = [i \in TxIndex |-> <<>>]
