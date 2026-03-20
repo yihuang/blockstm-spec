@@ -69,7 +69,7 @@ ExecuteTx(txn) ==
         /\ WriteMem(txn, writes)
         /\ readSet' = [readSet EXCEPT ![txn] = reads]
 
-ValidateTx(txn) == \A k \in DOMAIN readSet[txn]: ViewMem(txn)[k] = readSet[txn][k]
+ValidateTx(txn) == \A k \in block[txn].reads: ReadMem(k, txn) = readSet[txn][k]
 
 TxExecute(txn) ==
     /\ execStatus[txn] = "ReadyToExecute"
