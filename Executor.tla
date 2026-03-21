@@ -1,15 +1,17 @@
 ------------------------------- MODULE Executor --------------------------------
-EXTENDS Integers, Sequences, FiniteSets
+EXTENDS Integers, Sequences, FiniteSets, TLC
 
-CONSTANTS Key, NoVal, BlockSize, Executors, NoTask
+CONSTANTS Key, NoVal, BlockSize, Executors
 
 ASSUME Executors # {}
 
 VARIABLES
+    block, \* block content
     mem, \* multi-version memory
     execStatus, \* execution status of transactions
     incarnation, \* incarnation numbers of transactions
-    readSet \* the read set of transactions, used for validation
+    readSet, \* the read set of transactions, used for validation
+    commit_idx \* the next transaction to commit
 
 Tx == INSTANCE Tx
 
@@ -17,7 +19,6 @@ VARIABLES
     \* global shared counters
     execution_idx, \* the next transaction to execute
     validation_idx, \* the next transaction to validate
-    commit_idx, \* the next transaction to commit
     active_tasks, \* the number of currently active tasks
     validation_wave, \* validation wave counter, used to establish order of validation events
 
@@ -28,23 +29,22 @@ VARIABLES
     \* tx validation status
     tx_validated_wave \* the biggest wave number when each transaction was validated succesfully
 
-txVars == << mem, execStatus, incarnation, readSet >>
-vars == << txVars, execution_idx, validation_idx, commit_idx, active_tasks, validation_wave, tasks, terminated, tx_validated_wave >>
+txVars == << block, mem, execStatus, incarnation, readSet, commit_idx >>
+vars == << txVars, execution_idx, validation_idx, active_tasks, validation_wave, tasks, terminated, tx_validated_wave >>
 
 Task == [
-    txn: Tx!TxIndex ,
-    kind: {"Execution", "Validation"}
+    txn: Tx!TxIndex,
+    kind: {"Execution", "Validation", "NoTask"}
 ]
-\* NoTask == CHOOSE t: t \notin Task
+NoTask == [ txn |-> 1, kind |-> "NoTask" ]
 
 TypeOK ==
     /\ Tx!TypeOK
     /\ execution_idx \in 1..(BlockSize + 1)
     /\ validation_idx \in 1..(BlockSize + 1)
-    /\ commit_idx \in 1..(BlockSize + 1)
     /\ active_tasks \in 0..Cardinality(Executors)
     /\ validation_wave \in Nat
-    /\ tasks \in [Executors -> Task \union {NoTask}]
+    /\ tasks \in [Executors -> Task]
     /\ terminated \in [Executors -> BOOLEAN]
     /\ tx_validated_wave \in [1..BlockSize -> Nat]
 
@@ -52,7 +52,6 @@ Init ==
     /\ Tx!Init
     /\ execution_idx = 1
     /\ validation_idx = 1
-    /\ commit_idx = 1
     /\ active_tasks = 0
     /\ validation_wave = 1  \* starts from 1, 0 is reserved for not validated status
     /\ tasks = [e \in Executors |-> NoTask]
@@ -86,7 +85,7 @@ FetchTask(e) ==
     /\ tasks[e] = NoTask
     /\ NextTaskExecution(e) \/ NextTaskValidation(e)
     /\ active_tasks' = active_tasks + 1
-    /\ UNCHANGED << validation_wave, terminated, tx_validated_wave, commit_idx, txVars >>
+    /\ UNCHANGED << validation_wave, terminated, tx_validated_wave, txVars >>
 
 DecreaseValidationIdx(txn) ==
     IF txn < validation_idx THEN
@@ -144,7 +143,7 @@ ExecTask(e) ==
     /\ ~terminated[e]
     /\ tasks[e] /= NoTask
     /\ ExecuteTx(e) \/ ValidateTx(e)
-    /\ UNCHANGED << terminated, commit_idx >>
+    /\ UNCHANGED << terminated >>
 
 CheckDone(e) ==
     /\ ~terminated[e]
@@ -153,15 +152,13 @@ CheckDone(e) ==
     /\ commit_idx = BlockSize + 1
     /\ active_tasks = 0
     /\ terminated' = [terminated EXCEPT ![e] = TRUE]
-    /\ UNCHANGED << execution_idx, validation_idx, commit_idx, validation_wave, tasks, active_tasks, tx_validated_wave, txVars >>
+    /\ UNCHANGED << execution_idx, validation_idx, validation_wave, tasks, active_tasks, tx_validated_wave, txVars >>
 
 TryCommit(e) ==
     /\ ~terminated[e]
     /\ tasks[e] = NoTask
-    /\ commit_idx <= BlockSize
-    /\ Tx!ValidateTx(commit_idx)
-    /\ commit_idx' = commit_idx + 1
-    /\ UNCHANGED << execution_idx, validation_idx, validation_wave, tasks, active_tasks, terminated, tx_validated_wave, txVars >>
+    /\ Tx!TryCommit
+    /\ UNCHANGED << execution_idx, validation_idx, validation_wave, tasks, active_tasks, terminated, tx_validated_wave >>
 
 AllDone == \A e \in Executors: terminated[e]
 
@@ -172,23 +169,23 @@ Next ==
     \/ \E e \in Executors: FetchTask(e)
     \/ \E e \in Executors: ExecTask(e)
 
+Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
+
 \* Properties
 
 \* Invariant: no two executors can execute the same transaction at the same time
 NoConcurrentExecution ==
     \A e1, e2 \in Executors:
         (e1 /= e2) => ~(
-            /\ tasks[e1] /= NoTask
             /\ tasks[e1].kind = "Execution"
             /\ tasks[e2] = tasks[e1]
         )
 
 Properties ==
     /\ Tx!Properties
-    /\ [](commit_idx <= Tx!CommittedTxn + 1)
-    /\ [](AllDone => []AllDone)
-    /\ [](AllDone => Tx!CommittedTxn = BlockSize)
+    /\ <>[]AllDone
+    /\ []NoConcurrentExecution
 
-Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
+Symmetry == Permutations(Key) \cup Permutations(Executors)
 
 ================================================================================
