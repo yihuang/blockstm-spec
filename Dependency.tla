@@ -2,9 +2,8 @@
 
 EXTENDS Integers
 
-CONSTANTS Key, Val, NoVal, BlockSize
+CONSTANTS Key, NoVal, BlockSize
 
-ASSUME Val /= {}
 ASSUME BlockSize > 0
 
 VARIABLES
@@ -41,7 +40,7 @@ VARIABLES
 
 Storage == [k \in Key |-> 0]
 
-INSTANCE Mem
+INSTANCE Mem WITH Val <- 0..BlockSize
 
 \* Transaction write function: txn increments exactly the keys in txKeys[txn].
 \* Using a per-transaction key subset creates varied access patterns and diverse
