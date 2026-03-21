@@ -2,9 +2,9 @@
 
 EXTENDS Integers
 
-CONSTANTS Key, Val, NoVal, BlockSize
+CONSTANTS Key, NoVal, BlockSize
 
-ASSUME Val /= {}
+ASSUME BlockSize > 0
 
 VARIABLES
     mem,        \* multi-version memory
@@ -23,7 +23,7 @@ VARIABLES
                  \* incremented and it transitions to ReadyToExecute for re-execution
                  \* at the new (higher) incarnation.  The CURRENT run is always the
                  \* biggest incarnation.
-    deps        \* scheduling dependency: deps[r] = set of writers that have
+    deps,       \* scheduling dependency: deps[r] = set of writers that have
                 \* push-invalidated txn r and whose current incarnation r must wait
                 \* for before re-executing.  Specifically, txn r can only call TxBegin
                 \* when execStatus[w] = "Executed" for every w in deps[r], ensuring
@@ -32,10 +32,25 @@ VARIABLES
                 \* all deps are already Executed at that point).
                 \* If a writer w is itself re-aborted (set back to ReadyToExecute) after
                 \* invalidating r, then r stays blocked until w finishes its new run.
+    txKeys      \* txKeys[i] = subset of Key that transaction i reads and writes (may be empty).
+                \* Chosen non-deterministically at Init and fixed for the whole execution,
+                \* giving each transaction its own access pattern and producing diverse
+                \* inter-transaction dependency graphs (some transactions share keys,
+                \* others are independent, and some may touch no keys at all).
 
-Storage == [k \in Key |-> CHOOSE v \in Val : TRUE]
+Storage == [k \in Key |-> 0]
 
-INSTANCE Mem
+INSTANCE Mem WITH Val <- 0..BlockSize
+
+\* Transaction write function: txn increments exactly the keys in txKeys[txn].
+\* Using a per-transaction key subset creates varied access patterns and diverse
+\* inter-transaction dependency graphs (overlapping, non-overlapping, partial, or empty).
+\* Value bound: Storage starts at 0; each key is incremented by at most one
+\* transaction per sequential step, so values stay within Val = 0..BlockSize.
+TxWrite(txn, reads) == [k \in txKeys[txn] |-> reads[k] + 1]
+
+\* Apply transaction txn to a storage state.
+ApplyTxAt(txn, st) == ApplyChanges(st, TxWrite(txn, st))
 
 \* TxIndex extended with 0 to represent the initial version (writer 0 = storage).
 WriterIndex == TxIndex \union {0}
@@ -51,7 +66,7 @@ Relationship == [Key -> [WriterIndex -> SUBSET REntry]]
 
 ExecStatus == {"ReadyToExecute", "Executing", "Executed"}
 
-vars == << mem, rels, execStatus, incarnation, deps >>
+vars == << mem, rels, execStatus, incarnation, deps, txKeys >>
 
 TypeOK ==
     /\ TypeOKMem
@@ -62,6 +77,7 @@ TypeOK ==
     /\ execStatus \in [TxIndex -> ExecStatus]
     /\ incarnation \in [TxIndex -> Nat]
     /\ deps \in [TxIndex -> SUBSET TxIndex]
+    /\ txKeys \in [TxIndex -> SUBSET Key]
 
 \* Specification
 
@@ -69,6 +85,11 @@ TypeOK ==
 \* for the same key are updated to point to the new writer.
 \* "movers" are REntry records (r, incn) where r > w and the entry currently resides
 \* under some writer < w.  ALL incarnation entries for such readers are moved together.
+\*
+\* Existing entries in relations[k][w] represent reads from w's PREVIOUS incarnation
+\* (if w is re-executing).  We deliberately do NOT preserve them: they are dropped so
+\* that InvalidatedReaders detects them as displaced and re-invalidates those readers.
+\* On w's first execution relations[k][w] is empty, so the behaviour is identical.
 RecordWrite(relations, w, keys) ==
     [ k \in Key |->
         IF k \notin keys
@@ -80,7 +101,7 @@ RecordWrite(relations, w, keys) ==
             IN
             [ w2 \in WriterIndex |->
                 IF w2 = w
-                THEN relations[k][w2] \union movers
+                THEN movers
                 ELSE relations[k][w2] \ movers
             ]
     ]
@@ -149,26 +170,24 @@ InvalidatedReaders(old_rels, new_rels) ==
 \*   - Checks and clears scheduling deps: txn may not start until every writer that
 \*     previously push-aborted txn has finished its current incarnation (Executed).
 \*   - Eagerly registers txn's reads in rels by adding [r: txn, incn: incarnation[txn]]
-\*     under the nearest prior writer for every key.  This pre-registration is what
-\*     enables push validation to abort an in-progress execution (Executing state):
-\*     if a concurrent writer displaces one of these entries before TxExecute fires,
-\*     InvalidatedReaders detects the displacement and sets txn back to ReadyToExecute.
+\*     under the nearest prior writer, but ONLY for keys in txKeys[txn].  This
+\*     pre-registration is what enables push validation to abort an in-progress
+\*     execution (Executing state): if a concurrent writer displaces one of these
+\*     entries before TxExecute fires, InvalidatedReaders detects the displacement
+\*     and sets txn back to ReadyToExecute.
 TxBegin(txn) ==
     /\ execStatus[txn] = "ReadyToExecute"
     /\ \A w \in deps[txn] : execStatus[w] = "Executed"
     /\ LET entry == [r |-> txn, incn |-> incarnation[txn]]
-           \* Rebuild rels by adding entry under FindMem(k, txn) for each key.
-           \* Full construction over all keys is standard TLA+ idiom for nested functions.
+           \* AddRead(k): add entry under the nearest prior writer for key k.
+           AddRead(k) ==
+               LET w == FindMem(k, txn)
+               IN [rels[k] EXCEPT ![w] = @ \union {entry}]
        IN rels' = [k \in Key |->
-                      LET w == FindMem(k, txn)
-                      IN [ w2 \in WriterIndex |->
-                              IF w2 = w THEN rels[k][w2] \union {entry}
-                              ELSE rels[k][w2]
-                         ]
-                 ]
+                     IF k \in txKeys[txn] THEN AddRead(k) ELSE rels[k]]
     /\ execStatus' = [execStatus EXCEPT ![txn] = "Executing"]
     /\ deps' = [deps EXCEPT ![txn] = {}]
-    /\ UNCHANGED << mem, incarnation >>
+    /\ UNCHANGED << mem, incarnation, txKeys >>
 
 \* Commit the execution of txn.  Transitions Executing → Executed.
 \* Reads were already registered in TxBegin (rels_reads == rels at this point).
@@ -183,8 +202,10 @@ TxBegin(txn) ==
 \*                        incremented.  ReadyToExecute readers are untouched.
 TxExecute(txn) ==
     /\ execStatus[txn] = "Executing"
-    /\ \E cs \in Overlay :
-        LET
+    /\ LET
+            \* Deterministic write-set: TxWrite applied to txn's read view.
+            \* Only keys in txKeys[txn] are written; other keys are unaffected.
+            cs         == TxWrite(txn, ViewMem(txn))
             \* Reads were pre-registered by TxBegin; current rels IS the pre-read snapshot.
             \* We keep the name rels_reads to make the three-step read→write→validate
             \* pipeline explicit and consistent with RecordWrite/RecordRemove signatures.
@@ -204,7 +225,7 @@ TxExecute(txn) ==
             rels_clean == [ k \in Key |->
                 [ w \in WriterIndex |->
                     { e \in rels_new[k][w] : e.r \notin inv } ] ]
-        IN
+       IN
             /\ WriteMem(txn, cs)
             /\ rels' = rels_clean
             /\ execStatus' = [i \in TxIndex |->
@@ -219,6 +240,7 @@ TxExecute(txn) ==
             /\ deps' = [i \in TxIndex |->
                   IF i \in inv THEN deps[i] \union {txn}
                   ELSE deps[i]]
+            /\ UNCHANGED txKeys
 
 AllExecuted == \A txn \in TxIndex : execStatus[txn] = "Executed"
 
@@ -244,6 +266,7 @@ AbortCompleteness ==
 
 Init ==
     /\ InitMem
+    /\ txKeys      \in [TxIndex -> SUBSET Key]
     /\ rels        = [ k \in Key |-> [w \in WriterIndex |-> {}] ]
     /\ execStatus  = [i \in TxIndex |-> "ReadyToExecute"]
     /\ incarnation = [i \in TxIndex |-> 0]
@@ -305,5 +328,28 @@ DepsOnlyForPending ==
     \A r \in TxIndex : deps[r] /= {} => execStatus[r] = "ReadyToExecute"
 
 THEOREM NoWriteInBetween /\ ConsistentReads => RelationshipsDontOverlap
+
+\* Sequential execution state at step i: apply ApplyTxAt iteratively starting from
+\* Storage, without any reference to mem.  This gives the ground-truth result of
+\* running transactions 1..i in program order, each reading from the output of the
+\* previous transaction.  SeqStateAt[0] = Storage (base case, no transactions applied).
+\* Each transaction only reads/writes its own key subset txKeys[txn], so transactions
+\* with non-overlapping key sets are independent and those with overlap must be
+\* re-executed when a prior dependent transaction's output changes.
+SeqStateAt[i \in 0..BlockSize] ==
+    IF i = 0 THEN Storage
+    ELSE ApplyTxAt(i, SeqStateAt[i - 1])
+
+\* When all transactions have been executed, the view seen after every transaction txn
+\* must equal the sequential state produced by transactions 1..txn.  This is the
+\* TLC-checkable form of FinalEqualsSequential below.  It checks every prefix, not
+\* just the final result, so it catches any intermediate inconsistency.
+FinalEqualsSequentialInv ==
+    AllExecuted => \A txn \in TxIndex : ViewMem(txn + 1) = SeqStateAt[txn]
+
+\* The final execution result of parallel multi-version execution equals the result
+\* of applying each transaction's write set in sequential program order.
+THEOREM FinalEqualsSequential ==
+    ViewMem(BlockSize + 1) = SeqStateAt[BlockSize]
 
 ================================================================================
