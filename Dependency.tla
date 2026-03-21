@@ -85,6 +85,11 @@ TypeOK ==
 \* for the same key are updated to point to the new writer.
 \* "movers" are REntry records (r, incn) where r > w and the entry currently resides
 \* under some writer < w.  ALL incarnation entries for such readers are moved together.
+\*
+\* Existing entries in relations[k][w] represent reads from w's PREVIOUS incarnation
+\* (if w is re-executing).  We deliberately do NOT preserve them: they are dropped so
+\* that InvalidatedReaders detects them as displaced and re-invalidates those readers.
+\* On w's first execution relations[k][w] is empty, so the behaviour is identical.
 RecordWrite(relations, w, keys) ==
     [ k \in Key |->
         IF k \notin keys
@@ -96,7 +101,7 @@ RecordWrite(relations, w, keys) ==
             IN
             [ w2 \in WriterIndex |->
                 IF w2 = w
-                THEN relations[k][w2] \union movers
+                THEN movers
                 ELSE relations[k][w2] \ movers
             ]
     ]
