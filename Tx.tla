@@ -9,6 +9,8 @@ Storage == [k \in Key |-> 0]
 
 MaxValue == Cardinality(Key) ^ (BlockSize - 1)
 
+MaxIncarnation == 2^BlockSize - 1
+
 VARIABLE mem \* multi-version memory
 
 INSTANCE Mem WITH
@@ -47,7 +49,7 @@ TypeOK ==
     /\ block \in Blocks
     /\ TypeOKMem
     /\ execStatus \in [TxIndex -> ExecStatus]
-    /\ incarnation \in [TxIndex -> Nat]
+    /\ incarnation \in [TxIndex -> 0..MaxIncarnation]
     /\ readSet \in [TxIndex -> Overlay]
     /\ commit_idx \in 1..(BlockSize + 1)
 
