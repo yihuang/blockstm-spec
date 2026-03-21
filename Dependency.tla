@@ -182,9 +182,7 @@ TxBegin(txn) ==
            \* AddRead(k): add entry under the nearest prior writer for key k.
            AddRead(k) ==
                LET w == FindMem(k, txn)
-               IN [w2 \in WriterIndex |->
-                       IF w2 = w THEN rels[k][w2] \union {entry}
-                       ELSE rels[k][w2]]
+               IN [rels[k] EXCEPT ![w] = @ \union {entry}]
        IN rels' = [k \in Key |->
                      IF k \in txKeys[txn] THEN AddRead(k) ELSE rels[k]]
     /\ execStatus' = [execStatus EXCEPT ![txn] = "Executing"]
