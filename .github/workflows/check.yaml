@@ -1,0 +1,24 @@
+name: TLC Model Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    strategy:
+      matrix:
+        spec: [Tx, Executor, Dependency]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v30
+
+      - name: Check ${{ matrix.spec }}.tla
+        run: nix shell nixpkgs#tlaplus --command tlc -workers auto ${{ matrix.spec }}.tla

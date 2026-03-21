@@ -3,7 +3,7 @@ EXTENDS Sequences, Integers
 
 CONSTANTS Key, Val, NoVal, Storage, BlockSize
 
-ASSUME Storage \in [Key -> Val]
+ASSUME Storage \in [Key -> Val] \* Initial state
 ASSUME BlockSize \in Nat
 
 INSTANCE Store

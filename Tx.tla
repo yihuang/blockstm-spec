@@ -3,21 +3,20 @@ EXTENDS Sequences, Integers, TLC
 
 CONSTANTS Key, NoVal, BlockSize
 
+ASSUME BlockSize > 0
+
 Storage == [k \in Key |-> 0]
 
 MaxValue == Cardinality(Key) ^ (BlockSize - 1)
 
 MaxIncarnation == 2^BlockSize - 1
 
-VARIABLE mem
+VARIABLE mem \* multi-version memory
 
 INSTANCE Mem WITH
     \* assume value starts at 0 and each tx increase the value at most by 1,
     \* so the value should never exceed BlockSize.
     Val <- 0..MaxValue
-
-ASSUME BlockSize > 0
-
 
 (* All possible transactions:
    - reads  : subset of Keys
