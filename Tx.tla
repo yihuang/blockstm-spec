@@ -1,5 +1,5 @@
 ---------------------------------- MODULE Tx -----------------------------------
-EXTENDS Sequences, Integers, TLC
+EXTENDS Sequences, Integers, FiniteSets, TLC
 
 CONSTANTS Key, NoVal, BlockSize
 
@@ -9,13 +9,11 @@ Storage == [k \in Key |-> 0]
 
 MaxValue == Cardinality(Key) ^ (BlockSize - 1)
 
-MaxIncarnation == 2^BlockSize - 1
-
 VARIABLE mem \* multi-version memory
 
 INSTANCE Mem WITH
-    \* assume value starts at 0 and each tx increase the value at most by 1,
-    \* so the value should never exceed BlockSize.
+    \* Values start at 0 and are always taken from 0..MaxValue; the Sum operator
+    \* computes dependency sums modulo MaxValue + 1, so all writes stay in range.
     Val <- 0..MaxValue
 
 (* All possible transactions:
@@ -49,7 +47,7 @@ TypeOK ==
     /\ block \in Blocks
     /\ TypeOKMem
     /\ execStatus \in [TxIndex -> ExecStatus]
-    /\ incarnation \in [TxIndex -> 0..MaxIncarnation] \* biggest incarnation is exponential in BlockSize in worst case.
+    /\ incarnation \in [TxIndex -> Nat]
     /\ readSet \in [TxIndex -> Overlay]
     /\ commit_idx \in 1..(BlockSize + 1)
 
@@ -62,7 +60,7 @@ Sum(S, st) ==
          IN v % (MaxValue + 1)
 
 \* compute the write values of a transaction based on its dependencies and the readset
-TxWriteSet(tx, st) == [k \in tx.writes |-> Sum(tx.deps[k], st) + 1]
+TxWriteSet(tx, st) == [k \in tx.writes |-> (Sum(tx.deps[k], st) + 1) % (MaxValue + 1)]
 
 \* execute tx logic
 ExecuteTx(txn) ==
