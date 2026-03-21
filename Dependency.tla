@@ -179,18 +179,14 @@ TxBegin(txn) ==
     /\ execStatus[txn] = "ReadyToExecute"
     /\ \A w \in deps[txn] : execStatus[w] = "Executed"
     /\ LET entry == [r |-> txn, incn |-> incarnation[txn]]
-           \* Only register reads for the keys this transaction actually accesses.
-           \* Keys outside txKeys[txn] are not read, so no dependency entry is needed.
+           \* AddRead(k): add entry under the nearest prior writer for key k.
+           AddRead(k) ==
+               LET w == FindMem(k, txn)
+               IN [w2 \in WriterIndex |->
+                       IF w2 = w THEN rels[k][w2] \union {entry}
+                       ELSE rels[k][w2]]
        IN rels' = [k \in Key |->
-                     IF k \notin txKeys[txn]
-                     THEN rels[k]
-                     ELSE
-                         LET w == FindMem(k, txn)
-                         IN [ w2 \in WriterIndex |->
-                                 IF w2 = w THEN rels[k][w2] \union {entry}
-                                 ELSE rels[k][w2]
-                            ]
-                 ]
+                     IF k \in txKeys[txn] THEN AddRead(k) ELSE rels[k]]
     /\ execStatus' = [execStatus EXCEPT ![txn] = "Executing"]
     /\ deps' = [deps EXCEPT ![txn] = {}]
     /\ UNCHANGED << mem, incarnation, txKeys >>
