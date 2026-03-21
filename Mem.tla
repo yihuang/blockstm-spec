@@ -57,6 +57,6 @@ ViewMem(txn) == [k \in Key |-> ReadMem(k, txn)]
 
 \* Validate stored readSet against mem state
 ValidateReadSet(reads, txn) ==
-    [k \in DOMAIN reads |-> ReadMem(k, txn)] = reads
+    \A k \in DOMAIN reads: ReadMem(k, txn) = reads[k]
 
 ================================================================================

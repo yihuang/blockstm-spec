@@ -4,7 +4,10 @@ EXTENDS Sequences, Integers, TLC
 CONSTANTS Key, NoVal, BlockSize
 
 Storage == [k \in Key |-> 0]
-MaxValue == BlockSize * 2
+
+MaxValue == Cardinality(Key) ^ (BlockSize - 1)
+
+MaxIncarnation == 2^BlockSize - 1
 
 VARIABLE mem
 
@@ -47,7 +50,7 @@ TypeOK ==
     /\ block \in Blocks
     /\ TypeOKMem
     /\ execStatus \in [TxIndex -> ExecStatus]
-    /\ incarnation \in [TxIndex -> 0..BlockSize]
+    /\ incarnation \in [TxIndex -> 0..MaxIncarnation] \* biggest incarnation is exponential in BlockSize in worst case.
     /\ readSet \in [TxIndex -> Overlay]
     /\ commit_idx \in 1..(BlockSize + 1)
 
@@ -60,7 +63,7 @@ Sum(S, st) ==
          IN v % (MaxValue + 1)
 
 \* compute the write values of a transaction based on its dependencies and the readset
-TxWriteSet(tx, st) == [k \in tx.writes |-> Sum(tx.deps[k], st)]
+TxWriteSet(tx, st) == [k \in tx.writes |-> Sum(tx.deps[k], st) + 1]
 
 \* execute tx logic
 ExecuteTx(txn) ==
