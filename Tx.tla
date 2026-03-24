@@ -5,7 +5,7 @@ CONSTANTS Key, NoVal, BlockSize
 
 Storage == [k \in Key |-> 0]
 
-MaxValue == (Cardinality(Key) ^ BlockSize) - 1
+MaxValue == LET k == Cardinality(Key) IN (k ^ BlockSize - 1) \div (k - 1)
 
 MaxIncarnation == 2^BlockSize - 1
 
