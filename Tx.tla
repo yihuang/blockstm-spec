@@ -9,7 +9,7 @@ MaxValue == (Cardinality(Key) ^ BlockSize) - 1
 
 MaxIncarnation == 2^BlockSize - 1
 
-VARIABLE mem
+VARIABLE mem \* multi-version memory
 
 INSTANCE Mem WITH
     \* assume value starts at 0 and each tx increase the value at most by 1,
@@ -18,8 +18,7 @@ INSTANCE Mem WITH
 
 ASSUME BlockSize > 0
 
-
-(* All possible transactions:
+(* Transactions are modeled as relationships between arbitrary readset and writeset:
    - reads  : subset of Keys
    - writes : subset of Keys
    - deps   : function from each written key to a subset of reads
