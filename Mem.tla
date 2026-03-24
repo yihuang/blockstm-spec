@@ -31,8 +31,10 @@ TypeOKMem ==
  * returns 0 if not found.
  *)
 FindMem(key, txn) ==
-    LET cs == {i \in 1..(txn - 1): key \in DOMAIN mem[i]} IN
-        IF cs = {} THEN 0 ELSE Max(cs)
+    IF txn <= 1 THEN 0
+    ELSE
+        LET cs == {i \in 1..(txn - 1): key \in DOMAIN mem[i]} IN
+            IF cs = {} THEN 0 ELSE Max(cs)
 
 (*
  * Read the value for key as seen by transaction txn,
