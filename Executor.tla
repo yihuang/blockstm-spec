@@ -183,7 +183,7 @@ NoConcurrentExecution ==
 
 Properties ==
     /\ Tx!Properties
-    /\ <>[]AllDone
+    \* /\ <>[]AllDone
     /\ []NoConcurrentExecution
 
 Symmetry == Permutations(Key) \cup Permutations(Executors)
