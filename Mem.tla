@@ -4,6 +4,7 @@ EXTENDS Sequences, Integers
 CONSTANTS Key, Val, NoVal, BlockSize, Storage
 
 ASSUME Storage \in [Key -> Val] \* Initial state
+ASSUME BlockSize \in Nat
 
 INSTANCE Store
 
@@ -55,5 +56,9 @@ WriteMem(txn, cs) == mem' = [mem EXCEPT ![txn] = cs]
  * for the same key.
  *)
 ViewMem(txn) == [k \in Key |-> ReadMem(k, txn)]
+
+\* Validate stored readSet against mem state
+ValidateReadSet(reads, txn) ==
+    \A k \in DOMAIN reads: ReadMem(k, txn) = reads[k]
 
 ================================================================================
