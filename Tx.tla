@@ -5,7 +5,13 @@ CONSTANTS Key, NoVal, BlockSize
 
 Storage == [k \in Key |-> 0]
 
-MaxValue == LET k == Cardinality(Key) IN (k ^ BlockSize - 1) \div (k - 1)
+\* According to emulated transaction logic, max value is the iteration result of function `x |-> len(Key) * x + 1` on top of tx list.
+MaxValue ==
+    LET k == Cardinality(Key) IN
+    IF k = 1
+        THEN BlockSize
+    ELSE
+        (k ^ BlockSize - 1) \div (k - 1)
 
 MaxIncarnation == 2^BlockSize - 1
 
