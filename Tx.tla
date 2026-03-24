@@ -1,11 +1,11 @@
 ---------------------------------- MODULE Tx -----------------------------------
-EXTENDS Sequences, Integers, TLC
+EXTENDS Sequences, Integers, TLC, FiniteSets
 
 CONSTANTS Key, NoVal, BlockSize
 
 Storage == [k \in Key |-> 0]
 
-MaxValue == Cardinality(Key) ^ (BlockSize - 1)
+MaxValue == (Cardinality(Key) ^ BlockSize) - 1
 
 MaxIncarnation == 2^BlockSize - 1
 
