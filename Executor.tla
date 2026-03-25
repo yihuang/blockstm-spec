@@ -157,7 +157,7 @@ CheckDone(e) ==
 TryCommit(e) ==
     /\ ~terminated[e]
     /\ tasks[e] = NoTask
-    /\ Tx!TryCommit
+    /\ Tx!TryCommit(commit_idx)
     /\ UNCHANGED << execution_idx, validation_idx, validation_wave, tasks, active_tasks, terminated, tx_validated_wave >>
 
 AllDone == \A e \in Executors: terminated[e]
