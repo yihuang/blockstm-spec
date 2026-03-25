@@ -115,47 +115,6 @@ Init ==
     /\ InitCore
     /\ block \in Blocks
 
-\* Deterministic scenario helpers.
-\* Used by abort witnesses and commit-friendly scenario.
-OnlyKey == CHOOSE k \in Key : TRUE
-NoopTx == [reads |-> {}, writes |-> {}, deps |-> <<>>]
-WriteOneTx == [reads |-> {}, writes |-> {OnlyKey}, deps |-> (OnlyKey :> {})]
-ReadThenWriteOneTx == [reads |-> {OnlyKey}, writes |-> {OnlyKey}, deps |-> (OnlyKey :> {OnlyKey})]
-BaseScenarioBlock == [i \in TxIndex |-> NoopTx]
-
-FirstTxn == 1
-SecondTxn == IF BlockSize >= 2 THEN 2 ELSE 1
-LastTxn == BlockSize
-PrevLastTxn == IF BlockSize >= 2 THEN BlockSize - 1 ELSE BlockSize
-
-ConflictScenarioBlock(writeTxn, readWriteTxn) ==
-    IF BlockSize >= 2 /\ writeTxn # readWriteTxn
-    THEN [BaseScenarioBlock EXCEPT
-        ![writeTxn] = WriteOneTx,
-        ![readWriteTxn] = ReadThenWriteOneTx]
-    ELSE BaseScenarioBlock
-
-\* Tail conflict: short witness shape: TxExecute(LastTxn) -> TxExecute(PrevLastTxn) -> TxValidateAbort(LastTxn)
-AbortWitnessBlock == ConflictScenarioBlock(PrevLastTxn, LastTxn)
-
-\* Head conflict: short witness shape: TxExecute(SecondTxn) -> TxExecute(FirstTxn) -> TxValidateAbort(SecondTxn)
-AbortWitnessAltBlock == ConflictScenarioBlock(FirstTxn, SecondTxn)
-
-\* Commit-friendly: all tx are no-ops, so commits can progress quickly.
-CommitFriendlyBlock == BaseScenarioBlock
-
-InitAbortWitness ==
-    /\ InitCore
-    /\ block = AbortWitnessBlock
-
-InitAbortWitnessAlt ==
-    /\ InitCore
-    /\ block = AbortWitnessAltBlock
-
-InitCommitFriendly ==
-    /\ InitCore
-    /\ block = CommitFriendlyBlock
-
 Next ==
     \/ commit_idx = BlockSize + 1 /\ UNCHANGED vars
     \/ \E txn \in TxIndex: TxExecute(txn)
@@ -163,10 +122,6 @@ Next ==
     \/ TryCommit
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
-
-SpecAbortWitness == InitAbortWitness /\ [][Next]_vars /\ WF_vars(Next)
-SpecAbortWitnessAlt == InitAbortWitnessAlt /\ [][Next]_vars /\ WF_vars(Next)
-SpecCommitFriendly == InitCommitFriendly /\ [][Next]_vars /\ WF_vars(Next)
 
 \* Properties
 
