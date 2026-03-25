@@ -1,6 +1,8 @@
 -------------------------------- MODULE MCTx --------------------------------
 EXTENDS Tx
 
+ASSUME Key # {}
+
 \* Deterministic scenario helpers.
 OnlyKey == CHOOSE k \in Key : TRUE
 NoopTx == [reads |-> {}, writes |-> {}, deps |-> <<>>]
@@ -20,24 +22,27 @@ ConflictScenarioBlock(writeTxn, readWriteTxn) ==
 		![readWriteTxn] = ReadThenWriteOneTx]
 	ELSE NoopBlock
 
-\* Tail conflict: TxExecute(LastTxn) -> TxExecute(PrevLastTxn) -> TxValidateAbort(LastTxn)
+\* Tail conflict (BlockSize >= 2): TxExecute(LastTxn) -> TxExecute(PrevLastTxn) -> TxValidateAbort(LastTxn)
 AbortWitnessBlock == ConflictScenarioBlock(PrevLastTxn, LastTxn)
 
-\* Head conflict: TxExecute(SecondTxn) -> TxExecute(FirstTxn) -> TxValidateAbort(SecondTxn)
+\* Head conflict (BlockSize >= 2): TxExecute(SecondTxn) -> TxExecute(FirstTxn) -> TxValidateAbort(SecondTxn)
 AbortWitnessAltBlock == ConflictScenarioBlock(FirstTxn, SecondTxn)
 
 \* Commit-friendly: all tx are no-ops, so commits can progress quickly.
 CommitFriendlyBlock == NoopBlock
 
 InitAbortWitness ==
+	/\ Key # {}
 	/\ InitCore
 	/\ block = AbortWitnessBlock
 
 InitAbortWitnessAlt ==
+	/\ Key # {}
 	/\ InitCore
 	/\ block = AbortWitnessAltBlock
 
 InitCommitFriendly ==
+	/\ Key # {}
 	/\ InitCore
 	/\ block = CommitFriendlyBlock
 
