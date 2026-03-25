@@ -104,13 +104,16 @@ TryCommit ==
     /\ commit_idx' = commit_idx + 1
     /\ UNCHANGED << block, mem, execStatus, incarnation, readSet >>
 
-Init ==
+InitCore ==
     /\ InitMem
-    /\ block \in Blocks
     /\ execStatus = [i \in TxIndex |-> "ReadyToExecute"]
     /\ incarnation = [i \in TxIndex |-> 0]
     /\ readSet = [i \in TxIndex |-> <<>>]
     /\ commit_idx = 1
+
+Init ==
+    /\ InitCore
+    /\ block \in Blocks
 
 Next ==
     \/ commit_idx = BlockSize + 1 /\ UNCHANGED vars
