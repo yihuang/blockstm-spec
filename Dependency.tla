@@ -264,13 +264,16 @@ AbortCompleteness ==
     \A r \in TxIndex :
         (execStatus[r] = "Executing") ~> (execStatus[r] /= "Executing")
 
-Init ==
+InitCore ==
     /\ InitMem
-    /\ txKeys      \in [TxIndex -> SUBSET Key]
     /\ rels        = [ k \in Key |-> [w \in WriterIndex |-> {}] ]
     /\ execStatus  = [i \in TxIndex |-> "ReadyToExecute"]
     /\ incarnation = [i \in TxIndex |-> 0]
     /\ deps        = [i \in TxIndex |-> {}]
+
+Init ==
+    /\ InitCore
+    /\ txKeys      \in [TxIndex -> SUBSET Key]
 
 Next ==
     \/ AllExecuted /\ UNCHANGED vars
