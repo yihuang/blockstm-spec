@@ -117,7 +117,7 @@ Next ==
     \/ commit_idx = BlockSize + 1 /\ UNCHANGED vars
     \/ \E txn \in TxIndex: TxExecute(txn)
     \/ \E txn \in TxIndex: TxValidateAbort(txn)
-    \/ \E txn \in TxIndex: TryCommit(txn)
+    \/ \E txn \in {commit_idx} \cap TxIndex: TryCommit(txn)
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
