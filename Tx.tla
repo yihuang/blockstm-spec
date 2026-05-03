@@ -98,10 +98,11 @@ TxValidateAbort(txn) ==
     /\ mem' = [mem EXCEPT ![txn] = <<>>]
     /\ UNCHANGED << block, readSet, commit_idx >>
 
-TryCommit ==
+TryCommit(txn) ==
+    /\ txn = commit_idx
     /\ commit_idx <= BlockSize
-    /\ CleanExecuted(commit_idx)
-    /\ commit_idx' = commit_idx + 1
+    /\ CleanExecuted(txn)
+    /\ commit_idx' = txn + 1
     /\ UNCHANGED << block, mem, execStatus, incarnation, readSet >>
 
 Init ==
@@ -116,7 +117,7 @@ Next ==
     \/ commit_idx = BlockSize + 1 /\ UNCHANGED vars
     \/ \E txn \in TxIndex: TxExecute(txn)
     \/ \E txn \in TxIndex: TxValidateAbort(txn)
-    \/ TryCommit
+    \/ \E txn \in {commit_idx} \cap TxIndex: TryCommit(txn)
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
