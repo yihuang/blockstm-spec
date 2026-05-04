@@ -32,17 +32,14 @@ AbortWitnessAltBlock == ConflictScenarioBlock(FirstTxn, SecondTxn)
 CommitFriendlyBlock == NoopBlock
 
 InitAbortWitness ==
-	/\ Key # {}
 	/\ InitCore
 	/\ block = AbortWitnessBlock
 
 InitAbortWitnessAlt ==
-	/\ Key # {}
 	/\ InitCore
 	/\ block = AbortWitnessAltBlock
 
 InitCommitFriendly ==
-	/\ Key # {}
 	/\ InitCore
 	/\ block = CommitFriendlyBlock
 
