@@ -23,15 +23,15 @@ VARIABLES
                  \* incremented and it transitions to ReadyToExecute for re-execution
                  \* at the new (higher) incarnation.  The CURRENT run is always the
                  \* biggest incarnation.
-    deps,       \* scheduling dependency: deps[r] = set of writers that have
-                \* push-invalidated txn r and whose current incarnation r must wait
-                \* for before re-executing.  Specifically, txn r can only call TxBegin
-                \* when execStatus[w] = "Executed" for every w in deps[r], ensuring
-                \* that r reads from the LATEST writes of every writer that aborted it.
-                \* deps[r] is cleared to {} when r calls TxBegin (which checks that
-                \* all deps are already Executed at that point).
-                \* If a writer w is itself re-aborted (set back to ReadyToExecute) after
-                \* invalidating r, then r stays blocked until w finishes its new run.
+    deps,       \* scheduling dependency: deps[r] = set of [w: writer, incn: incarnation]
+                \* records.  Each record records which writer push-invalidated txn r at
+                \* a SPECIFIC incarnation of that writer.  A dependency is "alive" as long
+                \* as the writer's current incarnation equals the recorded incarnation;
+                \* if the writer has moved to a higher incarnation (re-executed), the
+                \* dependency is stale and can be ignored.
+                \* Before re-executing, txn r must wait for every alive dependency writer
+                \* to reach "Executed" status for the recorded incarnation.
+                \* deps[r] is cleared to {} when r calls TxBegin.
     txKeys      \* txKeys[i] = subset of Key that transaction i reads and writes (may be empty).
                 \* Chosen non-deterministically at Init and fixed for the whole execution,
                 \* giving each transaction its own access pattern and producing diverse
@@ -66,6 +66,9 @@ Relationship == [Key -> [WriterIndex -> SUBSET REntry]]
 
 ExecStatus == {"ReadyToExecute", "Executing", "Executed"}
 
+\* Dependency entry: pairs a writer index with the writer's incarnation at invalidation time.
+DEntry == [w: TxIndex, incn: Nat]
+
 vars == << mem, rels, execStatus, incarnation, deps, txKeys >>
 
 TypeOK ==
@@ -76,7 +79,7 @@ TypeOK ==
         /\ e.incn <= incarnation[e.r]   \* entries never exceed current incarnation
     /\ execStatus \in [TxIndex -> ExecStatus]
     /\ incarnation \in [TxIndex -> Nat]
-    /\ deps \in [TxIndex -> SUBSET TxIndex]
+    /\ deps \in [TxIndex -> SUBSET DEntry]
     /\ txKeys \in [TxIndex -> SUBSET Key]
 
 \* Specification
@@ -167,8 +170,11 @@ InvalidatedReaders(old_rels, new_rels) ==
                 /\ incarnation[r] = max_n }
 
 \* Start executing transaction txn.  Transitions ReadyToExecute → Executing.
-\*   - Checks and clears scheduling deps: txn may not start until every writer that
-\*     previously push-aborted txn has finished its current incarnation (Executed).
+\*   - Filters out stale deps (where the writer has advanced past the recorded
+\*     incarnation).  The remaining alive deps must all have execStatus[w] = "Executed"
+\*     for the recorded incarnation, meaning the writer's CURRENT incarnation matches
+\*     the recorded one and has finished.
+\*   - Clears deps[txn] since the check passed and stale entries are discarded.
 \*   - Eagerly registers txn's reads in rels by adding [r: txn, incn: incarnation[txn]]
 \*     under the nearest prior writer, but ONLY for keys in txKeys[txn].  This
 \*     pre-registration is what enables push validation to abort an in-progress
@@ -177,7 +183,9 @@ InvalidatedReaders(old_rels, new_rels) ==
 \*     and sets txn back to ReadyToExecute.
 TxBegin(txn) ==
     /\ execStatus[txn] = "ReadyToExecute"
-    /\ \A w \in deps[txn] : execStatus[w] = "Executed"
+    /\ LET alive == { dep \in deps[txn] : incarnation[dep.w] = dep.incn }
+    IN /\ \A dep \in alive : execStatus[dep.w] = "Executed"
+       /\ deps' = [deps EXCEPT ![txn] = {}]
     /\ LET entry == [r |-> txn, incn |-> incarnation[txn]]
            \* AddRead(k): add entry under the nearest prior writer for key k.
            AddRead(k) ==
@@ -186,7 +194,6 @@ TxBegin(txn) ==
        IN rels' = [k \in Key |->
                      IF k \in txKeys[txn] THEN AddRead(k) ELSE rels[k]]
     /\ execStatus' = [execStatus EXCEPT ![txn] = "Executing"]
-    /\ deps' = [deps EXCEPT ![txn] = {}]
     /\ UNCHANGED << mem, incarnation, txKeys >>
 
 \* Commit the execution of txn.  Transitions Executing → Executed.
@@ -238,7 +245,7 @@ TxExecute(txn) ==
             \* Aborted readers gain txn in their deps so they wait for txn's current
             \* incarnation to finish before re-executing at the higher incarnation.
             /\ deps' = [i \in TxIndex |->
-                  IF i \in inv THEN deps[i] \union {txn}
+                  IF i \in inv THEN deps[i] \union {[w |-> txn, incn |-> incarnation[txn]]}
                   ELSE deps[i]]
             /\ UNCHANGED txKeys
 
@@ -318,7 +325,7 @@ UniqueReaderIncarnations ==
 \* that can push-invalidate r has index < r.  This guarantees the deps graph is
 \* acyclic, so the system can never deadlock waiting for scheduling dependencies.
 DepsAcyclic ==
-    \A r \in TxIndex : \A w \in deps[r] : w < r
+    \A r \in TxIndex : \A dep \in deps[r] : dep.w < r
 
 \* deps[r] is non-empty only while r is still pending re-execution (ReadyToExecute).
 \* TxBegin clears deps[r] when r starts executing (transitions to Executing), after
@@ -326,6 +333,15 @@ DepsAcyclic ==
 \* or Executed, deps[r] = {}.
 DepsOnlyForPending ==
     \A r \in TxIndex : deps[r] /= {} => execStatus[r] = "ReadyToExecute"
+
+\* Alive deps: those where the writer's current incarnation matches the recorded one.
+\* If the writer has been re-executed (higher incarnation), the dependency is stale
+\* because the writer's read/write sets may have changed.
+AliveDeps(r) == { dep \in deps[r] : incarnation[dep.w] = dep.incn }
+
+\* Stale deps: those where the writer has advanced past the recorded incarnation.
+\* These can be safely ignored by a scheduler without waiting.
+StaleDeps(r) == { dep \in deps[r] : incarnation[dep.w] > dep.incn }
 
 THEOREM NoWriteInBetween /\ ConsistentReads => RelationshipsDontOverlap
 
